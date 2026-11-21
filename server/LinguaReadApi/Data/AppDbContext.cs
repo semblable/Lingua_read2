@@ -112,6 +112,14 @@ namespace LinguaReadApi.Data
                 .HasIndex(b => new { b.UserId, b.HardcoverBookId })
                 .HasFilter("\"HardcoverBookId\" IS NOT NULL")
                 .IsUnique();
+
+            modelBuilder.Entity<Book>()
+                .HasIndex(b => b.BookId, "IX_Books_PendingHardcoverSync")
+                .HasFilter("\"HardcoverPendingRatingId\" IS NOT NULL OR \"HardcoverPendingFinishAfterReadId\" IS NOT NULL");
+
+            modelBuilder.Entity<Book>()
+                .Property(b => b.HardcoverPendingRating)
+                .HasPrecision(2, 1);
             
             // Language - Book: One-to-Many
             modelBuilder.Entity<Book>()

@@ -78,6 +78,9 @@ namespace LinguaReadApi.Data.Migrations
                     b.Property<int?>("FolderId")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("HardcoverAutoMatchDisabled")
+                        .HasColumnType("boolean");
+
                     b.Property<int?>("HardcoverBookId")
                         .HasColumnType("integer");
 
@@ -89,6 +92,19 @@ namespace LinguaReadApi.Data.Migrations
 
                     b.Property<DateTime?>("HardcoverMatchedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("HardcoverPendingFinishAfterReadId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal?>("HardcoverPendingRating")
+                        .HasPrecision(2, 1)
+                        .HasColumnType("numeric(2,1)");
+
+                    b.Property<int?>("HardcoverPendingRatingBookId")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("HardcoverPendingRatingId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("HardcoverSlug")
                         .HasMaxLength(250)
@@ -165,6 +181,9 @@ namespace LinguaReadApi.Data.Migrations
                     b.HasIndex("UserId", "HardcoverBookId")
                         .IsUnique()
                         .HasFilter("\"HardcoverBookId\" IS NOT NULL");
+
+                    b.HasIndex(new[] { "BookId" }, "IX_Books_PendingHardcoverSync")
+                        .HasFilter("\"HardcoverPendingRatingId\" IS NOT NULL OR \"HardcoverPendingFinishAfterReadId\" IS NOT NULL");
 
                     b.ToTable("Books");
                 });

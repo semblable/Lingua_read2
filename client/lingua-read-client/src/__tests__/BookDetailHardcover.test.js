@@ -476,7 +476,7 @@ describe('BookDetail Hardcover integration', () => {
     fireEvent.click(screen.getByRole('button', { name: /finish book/i }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/not stored locally/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/link this book to Hardcover to sync ratings/i)).toBeInTheDocument();
     expect(within(dialog).queryByText('No rating')).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: /rate 4\.5 of 5/i })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: /finish with rating/i })).not.toBeInTheDocument();

@@ -550,7 +550,7 @@ const BookDetail = () => {
 
   const handleHardcoverUnlink = async () => {
     if (!window.confirm(
-      `Unlink "${book?.title || 'this book'}" from Hardcover? Your local book metadata and reading progress will be preserved.`
+      `Unlink "${book?.title || 'this book'}" from Hardcover? This cancels pending Hardcover updates and preserves your local metadata and reading progress.`
     )) {
       return;
     }
@@ -1042,10 +1042,10 @@ const BookDetail = () => {
           ) : (
             <p className="text-muted small mb-0">
               {!isLinkedToHardcover
-                ? 'Ratings sync to Hardcover when this book is linked and are not stored locally.'
+                ? 'Link this book to Hardcover to sync ratings.'
                 : !settingsContext.settings?.hasHardcoverApiToken
-                  ? 'Ratings sync to Hardcover and are not stored locally. Add a Hardcover API token in Settings to rate books.'
-                  : 'Ratings sync to Hardcover and are not stored locally. Enable Hardcover sync in Settings to rate books.'}
+                  ? 'Add a Hardcover API token in Settings to sync ratings.'
+                  : 'Enable Hardcover sync in Settings to sync ratings.'}
             </p>
           )}
           {finishError && (

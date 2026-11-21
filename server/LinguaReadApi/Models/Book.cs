@@ -47,6 +47,12 @@ namespace LinguaReadApi.Models
         public DateTime? HardcoverMatchedAt { get; set; }
 
         public DateTime? HardcoverLastSyncedAt { get; set; }
+        public bool HardcoverAutoMatchDisabled { get; set; }
+        public decimal? HardcoverPendingRating { get; set; }
+        public Guid? HardcoverPendingRatingId { get; set; }
+        public int? HardcoverPendingRatingBookId { get; set; }
+        // Latest completed remote read before attempting a finish. Zero means there was no prior read.
+        public int? HardcoverPendingFinishAfterReadId { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         

@@ -524,7 +524,7 @@ public class CompleteLessonTests
     }
 
     [Fact]
-    public async Task FinishBook_WithRating_ForwardsRatingToHardcoverSync()
+    public async Task FinishBook_WithRating_PersistsItBeforeTriggeringSync()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -536,7 +536,15 @@ public class CompleteLessonTests
         var result = await controller.FinishBook(bookId, new FinishBookRequest { Rating = 4.5m });
 
         Assert.IsType<NoContentResult>(result);
-        Assert.Equal(4.5m, hardcoverService.LastRating);
+        Assert.Equal(1, hardcoverService.SyncCalls);
+        Assert.Null(hardcoverService.LastRating);
+        var stored = await context.Books.AsNoTracking().SingleAsync(b => b.BookId == bookId);
+        Assert.Equal(4.5m, stored.HardcoverPendingRating);
+        Assert.NotNull(stored.HardcoverPendingRatingId);
+
+        await controller.FinishBook(bookId, new FinishBookRequest());
+        stored = await context.Books.AsNoTracking().SingleAsync(b => b.BookId == bookId);
+        Assert.Equal(4.5m, stored.HardcoverPendingRating);
     }
 
     [Fact]
@@ -561,15 +569,6 @@ public class CompleteLessonTests
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
         SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
-        var secondBookId = bookId + 1;
-        context.Books.Add(new Book
-        {
-            BookId = secondBookId,
-            UserId = userId,
-            LanguageId = 1,
-            Title = "Second Book"
-        });
-        await context.SaveChangesAsync();
 
         var hardcoverService = new RecordingHardcoverService();
         var channel = new HardcoverSyncChannel();
@@ -586,24 +585,8 @@ public class CompleteLessonTests
         Assert.True(channel.Reader.TryRead(out var req));
         Assert.Equal(userId, req!.UserId);
         Assert.Equal(bookId, req.BookId);
-        Assert.Equal(4.0m, req.Rating);
         Assert.False(channel.Reader.TryRead(out _));
-
-        // Enqueueing for a second distinct bookId produces a separate item, and a subsequent
-        // null-rating enqueue on an already-queued item preserves the non-null 4.0m rating.
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, 4.0m)));
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, secondBookId, null)));
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, null)));
-
-        Assert.True(channel.Reader.TryRead(out var firstCoalesced));
-        Assert.Equal(bookId, firstCoalesced!.BookId);
-        Assert.Equal(4.0m, firstCoalesced.Rating);
-
-        Assert.True(channel.Reader.TryRead(out var secondDistinct));
-        Assert.Equal(secondBookId, secondDistinct!.BookId);
-        Assert.Null(secondDistinct.Rating);
-
-        Assert.False(channel.Reader.TryRead(out _));
+        Assert.Equal(4.0m, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingRating);
     }
 
     [Fact]

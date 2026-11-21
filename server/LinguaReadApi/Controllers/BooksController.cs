@@ -1082,6 +1082,7 @@ namespace LinguaReadApi.Controllers
                     book.KnownWords = 0;
                     book.LearningWords = 0;
                     book.IsFinished = false;
+                    book.HardcoverPendingFinishAfterReadId = null;
                     book.StatsUpdatedAt = null;
                     await _context.SaveChangesAsync();
 
@@ -2471,6 +2472,7 @@ namespace LinguaReadApi.Controllers
                     else
                     {
                         book.IsFinished = false;
+                        book.HardcoverPendingFinishAfterReadId = null;
                         completionPercentage = totalTexts > 0
                             ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
                             : 0;
@@ -2515,7 +2517,6 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> FinishBook(int id, [FromBody] FinishBookRequest? request)
         {
             var userId = GetUserId();
-            decimal? rating = null;
 
             var errorResult = await LessonStudyActivity.AtomicAsync<IActionResult?>(_context, userId, async () =>
             {
@@ -2532,7 +2533,6 @@ namespace LinguaReadApi.Controllers
                 }
 
                 // Validate / normalize rating: must be in [0.5, 5.0] in 0.5 increments.
-                rating = null;
                 if (request?.Rating.HasValue == true)
                 {
                     var raw = request.Rating.Value;
@@ -2541,8 +2541,10 @@ namespace LinguaReadApi.Controllers
                         return BadRequest("Rating must be between 0.5 and 5.0.");
                     }
 
-                    // Snap to nearest 0.5
-                    rating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
+                    // Save the rating with the finish so synchronization can retry it.
+                    book.HardcoverPendingRating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
+                    book.HardcoverPendingRatingId = Guid.NewGuid();
+                    book.HardcoverPendingRatingBookId = book.HardcoverBookId;
                 }
 
                 // Mark unfinished child texts as finished — child-text completion is part of
@@ -2563,7 +2565,7 @@ namespace LinguaReadApi.Controllers
 
             if (errorResult != null) return errorResult;
 
-            await TriggerHardcoverProgressSyncAsync(userId, id, rating);
+            await TriggerHardcoverProgressSyncAsync(userId, id);
 
             return NoContent();
         }
@@ -2828,11 +2830,11 @@ namespace LinguaReadApi.Controllers
             return await _context.Books.AnyAsync(e => e.BookId == id && e.UserId == userId);
         }
 
-        private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId, decimal? rating = null)
+        private async Task TriggerHardcoverProgressSyncAsync(Guid userId, int bookId)
         {
             if (_hardcoverSyncChannel != null)
             {
-                if (!_hardcoverSyncChannel.TryEnqueue(new HardcoverSyncRequest(userId, bookId, rating)))
+                if (!_hardcoverSyncChannel.TryEnqueue(new HardcoverSyncRequest(userId, bookId)))
                 {
                     _logger.LogWarning("Hardcover sync queue rejected progress sync for user {UserId}, book {BookId}.", userId, bookId);
                 }
@@ -2846,7 +2848,7 @@ namespace LinguaReadApi.Controllers
 
             try
             {
-                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, rating, CancellationToken.None);
+                await _hardcoverService.SyncProgressAsync(userId, bookId, requireSyncEnabled: true, cancellationToken: CancellationToken.None);
             }
             catch (Exception ex)
             {

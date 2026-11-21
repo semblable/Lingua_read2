@@ -4,7 +4,7 @@ using System.Threading.Channels;
 
 namespace LinguaReadApi.Services;
 
-public sealed record HardcoverSyncRequest(Guid UserId, int BookId, decimal? Rating = null);
+public sealed record HardcoverSyncRequest(Guid UserId, int BookId);
 
 public sealed class HardcoverOperationLock
 {
@@ -36,9 +36,9 @@ public sealed class HardcoverSyncChannel
 
     private readonly object _sync = new();
     private readonly int _capacity;
-    private readonly Dictionary<(Guid UserId, int BookId), HardcoverSyncRequest> _pending = new();
-    private readonly Channel<(Guid UserId, int BookId)> _keys =
-        Channel.CreateUnbounded<(Guid UserId, int BookId)>(new UnboundedChannelOptions
+    private readonly HashSet<HardcoverSyncRequest> _pending = new();
+    private readonly Channel<HardcoverSyncRequest> _requests =
+        Channel.CreateUnbounded<HardcoverSyncRequest>(new UnboundedChannelOptions
         {
             SingleReader = false,
             SingleWriter = false
@@ -74,11 +74,8 @@ public sealed class HardcoverSyncChannel
                 return false;
             }
 
-            var key = (request.UserId, request.BookId);
-            if (_pending.TryGetValue(key, out var existing))
+            if (_pending.Contains(request))
             {
-                var mergedRating = request.Rating ?? existing.Rating;
-                _pending[key] = existing with { Rating = mergedRating };
                 return true;
             }
 
@@ -87,8 +84,8 @@ public sealed class HardcoverSyncChannel
                 return false;
             }
 
-            _pending[key] = request;
-            _keys.Writer.TryWrite(key);
+            _pending.Add(request);
+            _requests.Writer.TryWrite(request);
             return true;
         }
     }
@@ -97,16 +94,12 @@ public sealed class HardcoverSyncChannel
     {
         lock (_sync)
         {
-            while (_keys.Reader.TryRead(out var key))
+            if (_requests.Reader.TryRead(out request))
             {
-                if (_pending.Remove(key, out var item))
-                {
-                    request = item;
-                    return true;
-                }
+                _pending.Remove(request);
+                return true;
             }
 
-            request = null;
             return false;
         }
     }
@@ -121,7 +114,7 @@ public sealed class HardcoverSyncChannel
             }
 
             _completed = true;
-            _keys.Writer.TryComplete();
+            _requests.Writer.TryComplete();
         }
     }
 
@@ -131,7 +124,7 @@ public sealed class HardcoverSyncChannel
 
         public CoalescingChannelReader(HardcoverSyncChannel owner) => _owner = owner;
 
-        public override Task Completion => _owner._keys.Reader.Completion;
+        public override Task Completion => _owner._requests.Reader.Completion;
 
         public override bool CanCount => true;
 
@@ -150,6 +143,6 @@ public sealed class HardcoverSyncChannel
         }
 
         public override ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken = default) =>
-            _owner._keys.Reader.WaitToReadAsync(cancellationToken);
+            _owner._requests.Reader.WaitToReadAsync(cancellationToken);
     }
 }

@@ -6,6 +6,7 @@ using LinguaReadApi.Data;
 using LinguaReadApi.Models;
 using LinguaReadApi.Services;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -640,8 +641,10 @@ public class HardcoverServiceTests
         Assert.NotNull(settings.HardcoverLastSyncAt);
     }
 
-    [Fact]
-    public async Task SyncProgressAsync_UpdatingInProgressRead_OmitsStartedAtFinishedAtAndLastReadDate()
+    [Theory]
+    [InlineData(123, 100)]
+    [InlineData(999, null)]
+    public async Task SyncProgressAsync_UpdatingInProgressRead_UsesPagesOnlyForTheMatchingEdition(int remoteEdition, int? expectedPages)
     {
         await using var context = CreateContext();
         var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
@@ -663,24 +666,31 @@ public class HardcoverServiceTests
         await context.SaveChangesAsync();
 
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "edition_id": 999, "user_book_reads": [{ "id": 888, "edition_id": 999 }] }] }] } }"""),
-            JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 2, "edition_id": 999 } } } }"""),
+            JsonResponse($$""" { "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "edition_id": {{remoteEdition}}, "user_book_reads": [{ "id": 888, "edition_id": {{remoteEdition}} }] }] }] } } """),
+            JsonResponse($$""" { "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 2, "edition_id": {{remoteEdition}} } } } } """),
             JsonResponse("""{ "data": { "update_user_book_read": { "id": 888, "error": null, "user_book_read": { "id": 888 } } } }""")
         ]);
         var service = CreateService(context, handler);
 
-        var result = await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true);
+        var result = await service.SyncProgressAsync(userId, book.BookId);
 
         Assert.True(result.Success);
         var updateBookBody = handler.RequestBodies[1];
         Assert.DoesNotContain("\"last_read_date\"", updateBookBody);
         Assert.DoesNotContain("\"edition_id\"", updateBookBody);
-
-        var updateReadBody = handler.RequestBodies[2];
-        Assert.DoesNotContain("\"started_at\"", updateReadBody);
-        Assert.DoesNotContain("\"finished_at\"", updateReadBody);
-        Assert.DoesNotContain("\"edition_id\"", updateReadBody);
-        Assert.Contains("\"progress_pages\":100", updateReadBody);
+        Assert.Equal(expectedPages, result.ProgressPages);
+        if (expectedPages.HasValue)
+        {
+            var updateReadBody = handler.RequestBodies[2];
+            Assert.DoesNotContain("\"started_at\"", updateReadBody);
+            Assert.DoesNotContain("\"finished_at\"", updateReadBody);
+            Assert.DoesNotContain("\"edition_id\"", updateReadBody);
+            Assert.Contains("\"progress_pages\":100", updateReadBody);
+        }
+        else
+        {
+            Assert.Equal(2, handler.RequestCount);
+        }
     }
 
     [Fact]
@@ -813,8 +823,8 @@ public class HardcoverServiceTests
         await context.SaveChangesAsync();
 
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [] }] }] } }"""),
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [] }] }] } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }"""),
             JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3 } } } }""")
         ]);
         var service = CreateService(context, handler);
@@ -829,6 +839,70 @@ public class HardcoverServiceTests
         var updateBody = handler.RequestBodies[2];
         Assert.Contains("\"rating\":4.5", updateBody);
         Assert.DoesNotContain("\"last_read_date\"", updateBody);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SyncProgressAsync_BulkRetryRecordsMissingFinishWithoutDuplicatingTheRead(bool hasHistory)
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Finished Book",
+            Description = "Description",
+            Author = "Author",
+            Isbn13 = "9780765326379",
+            Publisher = "Publisher",
+            ReleaseDate = DateTime.UtcNow,
+            CoverImagePath = "epub_assets/cover.jpg",
+            HardcoverBookId = 99,
+            HardcoverEditionId = 123,
+            PageCount = 200,
+            IsFinished = true,
+            LastReadAt = new DateTime(2026, 11, 20, 20, 0, 0, DateTimeKind.Utc)
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var completedReads = hasHistory ? """[{ "id": 444 }]""" : "[]";
+        var firstLookup = hasHistory
+            ? JsonResponse($$""" { "data": { "me": [{ "user_books": [{ "id": 777, "edition_id": 123, "status_id": 2, "user_book_reads": [], "completed_reads": {{completedReads}} }] }] } } """)
+            : JsonResponse("""{ "data": { "me": [{ "user_books": [] }] } }""");
+        var firstShelfWrite = hasHistory
+            ? JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "edition_id": 123 } } } }""")
+            : JsonResponse("""{ "data": { "insert_user_book": { "id": 777, "error": null } } }""");
+        var handler = new QueueMessageHandler([
+            firstLookup,
+            firstShelfWrite,
+            JsonResponse("""{ "data": { "insert_user_book_read": { "error": "Temporary error" } } }"""),
+            JsonResponse($$""" { "data": { "me": [{ "user_books": [{ "id": 777, "book_id": 99, "edition_id": 123, "status_id": 3, "user_book_reads": [], "completed_reads": {{completedReads}} }] }] } } """),
+            JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "edition_id": 123 } } } }"""),
+            JsonResponse("""{ "data": { "insert_user_book_read": { "id": 555 } } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "edition_id": 123, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }""")
+        ]);
+        var service = CreateService(context, handler);
+        service.UtcNow = () => new DateTimeOffset(2026, 11, 21, 12, 0, 0, TimeSpan.Zero);
+
+        await Assert.ThrowsAsync<HardcoverApiException>(() => service.SyncProgressAsync(userId, book.BookId));
+        context.ChangeTracker.Clear();
+        Assert.Equal(hasHistory ? 444 : 0, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
+
+        var retried = Assert.Single((await service.SyncAllAsync(userId)).Results);
+        Assert.True(retried.Success);
+        Assert.Contains("completed_reads: user_book_reads", handler.RequestBodies[3]);
+        Assert.Contains("insert_user_book_read", handler.RequestBodies[5]);
+        Assert.Contains("\"finished_at\":\"2026-11-20\"", handler.RequestBodies[5]);
+        Assert.Contains("\"progress_pages\":200", handler.RequestBodies[5]);
+        var finished = await context.Books.SingleAsync();
+        Assert.Equal(555, finished.HardcoverUserBookReadId);
+        Assert.Null(finished.HardcoverPendingFinishAfterReadId);
+
+        Assert.True((await service.SyncProgressAsync(userId, book.BookId)).Success);
+        Assert.Equal(7, handler.RequestCount);
     }
 
     [Fact]
@@ -1112,6 +1186,86 @@ public class HardcoverServiceTests
         Assert.Null(cleared.HardcoverLastSyncedAt);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MatchBookAsync_ChangingToAnEditionOfUnknownLengthDropsTheOldPageCount(bool unlinkFirst)
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token");
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Different Editions",
+            HardcoverBookId = 99,
+            HardcoverEditionId = 123,
+            PageCount = 600
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "books": [{ "id": 99, "title": "Different Editions", "pages": 250, "editions": [{ "id": 456 }] }] } }""")
+        ]);
+        var service = CreateService(context, handler);
+
+        if (unlinkFirst) await service.UnlinkBookAsync(userId, book.BookId);
+        var result = await service.MatchBookAsync(userId, book.BookId, hardcoverBookId: 99, hardcoverEditionId: unlinkFirst ? null : 456);
+
+        Assert.True(result.Applied);
+        var saved = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Equal(456, saved.HardcoverEditionId);
+        Assert.Null(saved.PageCount);
+    }
+
+    [Fact]
+    public async Task UnlinkBookAsync_RequiresAnExplicitMatchBeforeSyncingAgain()
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Oathbringer",
+            Author = "Brandon Sanderson",
+            HardcoverBookId = 328491,
+            HardcoverPendingRating = 3.5m,
+            HardcoverPendingRatingId = Guid.NewGuid(),
+            HardcoverPendingRatingBookId = 328491,
+            HardcoverPendingFinishAfterReadId = 12
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "search": { "ids": [328491] } } }"""),
+            OathbringerBookResponse(),
+            OathbringerBookResponse()
+        ]);
+        var service = CreateService(context, handler);
+
+        await service.UnlinkBookAsync(userId, book.BookId);
+        context.ChangeTracker.Clear();
+
+        Assert.True((await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true)).Skipped);
+        Assert.True(Assert.Single((await service.SyncAllAsync(userId)).Results).Skipped);
+        Assert.Equal(0, handler.RequestCount);
+
+        var candidates = await service.MatchBookAsync(userId, book.BookId);
+        Assert.False(candidates.Applied);
+        Assert.Equal(328491, Assert.Single(candidates.Candidates).BookId);
+
+        var relinked = await service.MatchBookAsync(userId, book.BookId, hardcoverBookId: 328491);
+        Assert.True(relinked.Applied);
+        var saved = await context.Books.SingleAsync();
+        Assert.Equal(328491, saved.HardcoverBookId);
+        Assert.False(saved.HardcoverAutoMatchDisabled);
+        Assert.Null(saved.HardcoverPendingRating);
+        Assert.Null(saved.HardcoverPendingFinishAfterReadId);
+    }
+
     [Fact]
     public async Task GetStatusAsync_Parses401And403ScopeErrors()
     {
@@ -1364,6 +1518,7 @@ public class HardcoverServiceTests
         var channel = new HardcoverSyncChannel();
         var invoked = new TaskCompletionSource<(Guid UserId, int BookId, bool RequireSyncEnabled, decimal? Rating)>(TaskCreationOptions.RunContinuationsAsynchronously);
         var services = new ServiceCollection();
+        services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
         services.AddScoped<IHardcoverService>(_ => new CallbackHardcoverService(invoked));
         using var provider = services.BuildServiceProvider();
 
@@ -1373,7 +1528,7 @@ public class HardcoverServiceTests
             NullLogger<HardcoverSyncBackgroundService>.Instance);
 
         var userId = Guid.NewGuid();
-        channel.TryEnqueue(new HardcoverSyncRequest(userId, 42, 4.5m));
+        channel.TryEnqueue(new HardcoverSyncRequest(userId, 42));
 
         await worker.StartAsync(CancellationToken.None);
         var call = await invoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -1382,7 +1537,111 @@ public class HardcoverServiceTests
         Assert.Equal(userId, call.UserId);
         Assert.Equal(42, call.BookId);
         Assert.True(call.RequireSyncEnabled);
-        Assert.Equal(4.5m, call.Rating);
+        Assert.Null(call.Rating);
+    }
+
+    [Fact]
+    public async Task HardcoverSyncBackgroundService_ResumesPersistedRatingAfterARejectedWrite()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var channel = new HardcoverSyncChannel();
+        var delivered = new TaskCompletionSource<HardcoverProgressSyncResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        const string remoteBook = """{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }""";
+        var handler = new QueueMessageHandler([
+            JsonResponse(remoteBook),
+            JsonResponse("""{ "data": { "update_user_book": { "error": "Temporarily unavailable" } } }"""),
+            JsonResponse(remoteBook),
+            JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null } } }""")
+        ]);
+        var services = new ServiceCollection();
+        services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<IHardcoverService>(scope => new DelegateHardcoverService(async (userId, bookId, requireSync, _, ct) =>
+        {
+            var service = CreateService(scope.GetRequiredService<AppDbContext>(), handler);
+            var result = await service.SyncProgressAsync(userId, bookId, requireSync, cancellationToken: ct);
+            delivered.TrySetResult(result);
+            return result;
+        }));
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Finished Book",
+            HardcoverBookId = 99,
+            IsFinished = true,
+            HardcoverPendingRating = 4.5m,
+            HardcoverPendingRatingId = Guid.NewGuid()
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        var service = CreateService(context, handler);
+
+        await Assert.ThrowsAsync<HardcoverApiException>(() => service.SyncProgressAsync(userId, book.BookId));
+        Assert.Equal(4.5m, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingRating);
+        Assert.Equal(0, channel.Reader.Count);
+
+        using var worker = new HardcoverSyncBackgroundService(channel, provider, NullLogger<HardcoverSyncBackgroundService>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        var result = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Contains("\"rating\":4.5", handler.RequestBodies[1]);
+        Assert.Contains("\"rating\":4.5", handler.RequestBodies[3]);
+        var saved = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Null(saved.HardcoverPendingRating);
+        Assert.Null(saved.HardcoverPendingRatingId);
+    }
+
+    [Fact]
+    public async Task SyncProgressAsync_AcknowledgingRatingPreservesANewerRating()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = await SeedLanguageAsync(context),
+            Title = "Finished Book",
+            HardcoverBookId = 99,
+            IsFinished = true,
+            HardcoverPendingRating = 4.5m,
+            HardcoverPendingRatingId = Guid.NewGuid()
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        var newerRatingId = Guid.NewGuid();
+
+        var handler = new FuncMessageHandler(async (request, ct) =>
+        {
+            var body = await request.Content!.ReadAsStringAsync(ct);
+            if (body.Contains("query UserBook", StringComparison.Ordinal))
+            {
+                return JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }""");
+            }
+
+            Assert.Contains("\"rating\":4.5", body);
+            await using var concurrentContext = new AppDbContext(options);
+            await concurrentContext.Books.Where(b => b.BookId == book.BookId).ExecuteUpdateAsync(setters => setters
+                .SetProperty(b => b.HardcoverPendingRating, 5.0m)
+                .SetProperty(b => b.HardcoverPendingRatingId, newerRatingId), ct);
+            return JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null } } }""");
+        });
+
+        var result = await CreateService(context, handler).SyncProgressAsync(userId, book.BookId);
+
+        Assert.True(result.Success);
+        var saved = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Equal(5.0m, saved.HardcoverPendingRating);
+        Assert.Equal(newerRatingId, saved.HardcoverPendingRatingId);
     }
 
     [Fact]
@@ -1408,7 +1667,7 @@ public class HardcoverServiceTests
         await context.SaveChangesAsync();
 
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [] }] }] } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }"""),
             // Even if update_user_book somehow returned a finished read, UpdateUserBookAsync must ignore it and SyncProgressCoreAsync must skip UpsertUserBookReadAsync.
             JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3, "user_book_reads": [{ "id": 555, "finished_at": "2024-01-10", "progress_pages": 200 }] } } } }""")
         ]);
@@ -2005,8 +2264,10 @@ public class HardcoverServiceTests
         Assert.Equal(888, (await context.Books.SingleAsync()).HardcoverUserBookId);
     }
 
-    [Fact]
-    public async Task SyncProgressAsync_StaleReadRecovery_WhenRefetchedAlreadyRead_DoesNotInsertDuplicateRead()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SyncProgressAsync_StaleReadRecovery_ConfirmsTheAttemptedReadOrInsertsIt(bool completedAttempt)
     {
         await using var context = CreateContext();
         var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
@@ -2027,21 +2288,24 @@ public class HardcoverServiceTests
         context.Texts.Add(new Text { UserId = userId, LanguageId = languageId, BookId = book.BookId, Title = "P1", Content = "one", PartNumber = 1, IsFinished = true });
         await context.SaveChangesAsync();
 
+        var pendingRead = completedAttempt ? """[{ "id": 888 }]""" : "[]";
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "user_book_reads": [{ "id": 888, "finished_at": null }] }] }] } }"""),
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "user_book_reads": [{ "id": 888, "finished_at": null }], "completed_reads": [{ "id": 999 }] }] }] } }"""),
             JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3 } } } }"""),
             JsonResponse("""{ "data": { "update_user_book_read": { "id": null, "error": "User book read not found" } } }"""),
-            // Refetch shows book is already finished with no active read
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [] }] }] } }""")
+            JsonResponse($$""" { "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 999 }], "completed_pending_read": {{pendingRead}} }] }] } } """),
+            JsonResponse("""{ "data": { "insert_user_book_read": { "id": 1000 } } }""")
         ]);
         var service = CreateService(context, handler);
 
         var result = await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true);
 
         Assert.True(result.Success);
-        Assert.Equal(4, handler.RequestCount);
-        Assert.DoesNotContain(handler.RequestBodies, b => b.Contains("insert_user_book_read"));
-        Assert.Null((await context.Books.SingleAsync()).HardcoverUserBookReadId);
+        Assert.Contains("\"pendingReadId\":888", handler.RequestBodies[3]);
+        Assert.Equal(completedAttempt ? 4 : 5, handler.RequestCount);
+        var saved = await context.Books.SingleAsync();
+        Assert.Equal(completedAttempt ? (int?)null : 1000, saved.HardcoverUserBookReadId);
+        Assert.Null(saved.HardcoverPendingFinishAfterReadId);
     }
 
     [Fact]
@@ -2819,7 +3083,7 @@ public class HardcoverServiceTests
     }
 
     [Fact]
-    public async Task HardcoverSyncChannel_CoalescesByUserAndBook_MergesRating_EnforcesCapacity_AndSupportsDI()
+    public async Task HardcoverSyncChannel_CoalescesByUserAndBook_EnforcesCapacity_AndSupportsDI()
     {
         // Verify default DI resolution works with optional capacity parameter
         var diServices = new ServiceCollection();
@@ -2830,29 +3094,21 @@ public class HardcoverServiceTests
         var channel = new HardcoverSyncChannel(capacity: 2);
         var userId = Guid.NewGuid();
 
-        // Coalescing + rating merge: null -> 4.5m -> null (preserves 4.5m) -> 5.0m (replaces)
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1, null)));
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1, 4.5m)));
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1, null)));
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1, 5.0m)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 1)));
         Assert.Equal(1, channel.Reader.Count);
 
-        // Second distinct key fills capacity (2)
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 2, null)));
-        // Third distinct key rejected when at capacity
-        Assert.False(channel.TryEnqueue(new HardcoverSyncRequest(userId, 3, null)));
-        // Updating an already-queued key while at capacity still succeeds
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 2, 3.5m)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 2)));
+        Assert.False(channel.TryEnqueue(new HardcoverSyncRequest(userId, 3)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 2)));
 
         Assert.True(channel.TryDequeue(out var first));
         Assert.Equal(1, first!.BookId);
-        Assert.Equal(5.0m, first.Rating);
 
-        // Capacity freed -> new key accepted
-        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 3, 2.0m)));
+        Assert.True(channel.TryEnqueue(new HardcoverSyncRequest(userId, 3)));
 
         channel.Complete();
-        Assert.False(channel.TryEnqueue(new HardcoverSyncRequest(userId, 4, null)));
+        Assert.False(channel.TryEnqueue(new HardcoverSyncRequest(userId, 4)));
 
         var remaining = new List<HardcoverSyncRequest>();
         await foreach (var item in channel.Reader.ReadAllAsync())
@@ -2861,8 +3117,7 @@ public class HardcoverServiceTests
         }
 
         Assert.Equal(2, remaining.Count);
-        Assert.Equal((2, 3.5m), (remaining[0].BookId, remaining[0].Rating));
-        Assert.Equal((3, 2.0m), (remaining[1].BookId, remaining[1].Rating));
+        Assert.Equal([2, 3], remaining.Select(request => request.BookId));
     }
 
     [Fact]
@@ -2879,6 +3134,7 @@ public class HardcoverServiceTests
         var userCCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var services = new ServiceCollection();
+        services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
         services.AddScoped<IHardcoverService>(_ => new DelegateHardcoverService(async (uid, bookId, _, _, ct) =>
         {
             if (uid == userA)

@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react'; // Add useCallback, useMemo
-import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form } from 'react-bootstrap'; // Add Form
+import { Container, Card, Button, Alert, Spinner, ListGroup, Badge, ProgressBar, Modal, Form, Dropdown } from 'react-bootstrap'; // Add Form
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { LinkContainer } from 'react-router-bootstrap';
 import type { Book } from '../utils/api/books';
 import type { HardcoverCandidate } from '../utils/api/hardcover';
 import { SettingsContext } from '../contexts/SettingsContext';
+import { rememberSentenceProgress } from '../utils/sentenceProgress';
 
-// `isFinished` is returned by the API on BookDetailDto; keep it optional here
-// until api-types.d.ts is regenerated from Swagger.
-type BookWithStatus = Book & { isFinished?: boolean };
+type ReadingAction = { kind: 'undo-finish'; finishedAt: string } | { kind: 'reread' };
 type EditingBookDraft = { bookId?: number; title?: string | null };
 type EditingTextDraft = { textId?: number; title?: string | null; content?: string | null; tag?: string };
 type HardcoverMessage = { type: string; text: string };
@@ -18,6 +17,8 @@ type FinishSubmitMode = 'with-rating' | 'without-rating' | null;
 import {
   getBook,
   finishBook,
+  undoBookFinish,
+  startBookReread,
   updateBook,
   deleteBook,
   getText,
@@ -47,7 +48,7 @@ const normalizeCoverUrl = (value: string | null | undefined): string | null => {
 const BookDetail = () => {
   const { bookId } = useParams();
   const settingsContext = useContext(SettingsContext);
-  const [book, setBook] = useState<BookWithStatus | null>(null);
+  const [book, setBook] = useState<Book | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -57,6 +58,11 @@ const BookDetail = () => {
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [pendingRating, setPendingRating] = useState<number | null>(null); // 0.5 .. 5.0 or null
   const [finishError, setFinishError] = useState('');
+  const [readingAction, setReadingAction] = useState<ReadingAction | null>(null);
+  const [savingReadingAction, setSavingReadingAction] = useState(false);
+  const [readingActionError, setReadingActionError] = useState('');
+  const [readingActionMessage, setReadingActionMessage] = useState('');
+  const readingActionRequestRef = useRef(0);
 
   // State for Edit/Delete Modals and Data
   const [showEditBookModal, setShowEditBookModal] = useState(false);
@@ -156,9 +162,14 @@ const BookDetail = () => {
     setFinishError('');
     setSubmittingFinishMode(null);
     setFinishingBook(false);
+    setReadingAction(null);
+    setSavingReadingAction(false);
+    setReadingActionError('');
+    setReadingActionMessage('');
 
     return () => {
       hardcoverRequestRef.current += 1;
+      readingActionRequestRef.current += 1;
     };
   }, [bookId]);
 
@@ -183,6 +194,7 @@ const BookDetail = () => {
   const hardcoverConfiguredInSettings = !settingsLoaded
     || (Boolean(settingsContext.settings?.hasHardcoverApiToken) && Boolean(settingsContext.settings?.hardcoverSyncEnabled));
   const isLinkedToHardcover = Boolean(book?.hardcoverBookId);
+  const isRereading = !!book?.rereadStartedAt && !book?.isFinished;
   const canRateOnHardcover = isLinkedToHardcover && hardcoverConfiguredInSettings;
 
   const handleOpenFinishModal = () => {
@@ -204,15 +216,49 @@ const BookDetail = () => {
     setFinishError('');
     try {
       await finishBook(bookIdStr, rating);
-      // Guard the null branch — spreading a null prev would produce `{ isFinished: true }` and lose all book fields.
       setBook(prev => prev ? { ...prev, isFinished: true } : prev);
+      setReadingActionMessage('Book marked finished. Choose Undo finish from More to restore its progress.');
       setShowRatingModal(false);
       setPendingRating(null);
+      await fetchBook({ silent: true });
     } catch (err: unknown) {
       setFinishError((err as Error)?.message || 'Failed to mark book as finished.');
     } finally {
       setFinishingBook(false);
       setSubmittingFinishMode(null);
+    }
+  };
+
+  const openReadingAction = (action: ReadingAction) => {
+    setReadingActionError('');
+    setReadingAction(action);
+  };
+
+  const submitReadingAction = async () => {
+    if (!readingAction || !book || savingReadingAction) return;
+    const requestId = ++readingActionRequestRef.current;
+    setSavingReadingAction(true);
+    setReadingActionError('');
+    try {
+      if (readingAction.kind === 'reread') {
+        const startedAt = await startBookReread(bookIdStr);
+        if (requestId !== readingActionRequestRef.current) return;
+        for (const section of book.parts ?? []) {
+          if (section.textId != null) rememberSentenceProgress(section.textId, { cursorResetAt: startedAt });
+        }
+      } else {
+        await undoBookFinish(bookIdStr, readingAction.finishedAt);
+      }
+      if (requestId !== readingActionRequestRef.current) return;
+      setReadingAction(null);
+      setReadingActionMessage(readingAction.kind === 'reread' ? 'Reread started.' : 'Book progress restored.');
+      await fetchBook({ silent: true });
+    } catch (err: unknown) {
+      if (requestId === readingActionRequestRef.current) {
+        setReadingActionError((err as Error)?.message || 'Could not update book progress.');
+      }
+    } finally {
+      if (requestId === readingActionRequestRef.current) setSavingReadingAction(false);
     }
   };
 
@@ -503,7 +549,7 @@ const BookDetail = () => {
       const result = await syncHardcoverProgress(bookIdStr);
       if (requestId !== hardcoverRequestRef.current) return;
 
-      if (!book?.hardcoverBookId && result.skipped && hardcoverConfiguredInSettings) {
+      if (!book?.hardcoverBookId && result.skipped && hardcoverConfiguredInSettings && !isRereading) {
         try {
           const matchResult = await matchHardcoverBook(bookIdStr);
           if (requestId !== hardcoverRequestRef.current) return;
@@ -755,8 +801,13 @@ const BookDetail = () => {
     );
   }
 
+  const canStartReread = !!book.isFinished && sortedParts.length > 0;
+  const undoFinishAt = book.undoFinishAt;
+  const isUndoFinish = readingAction?.kind === 'undo-finish';
+
   return (
     <Container className="py-5">
+      {readingActionMessage && <Alert variant="success" role="status">{readingActionMessage}</Alert>}
       <div className="d-flex justify-content-between align-items-start mb-4 gap-4 flex-wrap">
         <div className="d-flex gap-4 flex-wrap align-items-start">
           {book.coverImagePath && (
@@ -771,6 +822,11 @@ const BookDetail = () => {
               <Badge bg="success" className="ms-2 align-middle" style={{ fontSize: '0.5em' }}>
                 <i className="bi bi-check-circle-fill me-1"></i>
                 Completed
+              </Badge>
+            )}
+            {isRereading && (
+              <Badge bg="primary" className="ms-2 align-middle" style={{ fontSize: '0.5em' }}>
+                Rereading
               </Badge>
             )}
           </h1>
@@ -822,10 +878,25 @@ const BookDetail = () => {
               Finish Book
             </Button>
           )}
-          {/* Add Edit/Delete Book Buttons */}
-          <Button variant="outline-warning" size="sm" onClick={handleOpenEditBookModal} className="ms-2">Edit Book</Button>
-          <Button variant="outline-danger" size="sm" onClick={handleBookDelete} className="ms-2">Delete Book</Button>
-          <Button variant="outline-info" size="sm" onClick={handleOpenReSplitModal} className="ms-2">Re-split Book</Button>
+          <Dropdown>
+            <Dropdown.Toggle id="book-more-actions" variant="outline-secondary" className="w-100">
+              More
+            </Dropdown.Toggle>
+            <Dropdown.Menu align="end">
+              {undoFinishAt && (
+                <Dropdown.Item onClick={() => openReadingAction({ kind: 'undo-finish', finishedAt: undoFinishAt })}>
+                  Undo finish
+                </Dropdown.Item>
+              )}
+              {canStartReread && (
+                <Dropdown.Item onClick={() => openReadingAction({ kind: 'reread' })}>Start reread</Dropdown.Item>
+              )}
+              {(undoFinishAt || canStartReread) && <Dropdown.Divider />}
+              <Dropdown.Item onClick={handleOpenEditBookModal}>Edit Book</Dropdown.Item>
+              <Dropdown.Item onClick={handleOpenReSplitModal}>Re-split Book</Dropdown.Item>
+              <Dropdown.Item className="text-danger" onClick={handleBookDelete}>Delete Book</Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown>
         </div>
       </div>
 
@@ -906,7 +977,14 @@ const BookDetail = () => {
       </Card>
 
       <Card className="shadow-sm mb-4">
-        <Card.Header as="h5">Book Sections</Card.Header>
+        <Card.Header as="h5" className="d-flex flex-wrap align-items-center justify-content-between gap-2">
+          Book Sections
+          {isRereading && (
+            <span className="small text-muted">
+              {sortedParts.filter(part => part.isFinished).length} of {sortedParts.length} finished
+            </span>
+          )}
+        </Card.Header>
         <ListGroup variant="flush">
           {sortedParts.map((part, index) => (
             <LinkContainer key={part.textId} to={`/texts/${part.textId}`}>
@@ -916,7 +994,12 @@ const BookDetail = () => {
               >
               {/* text-start: .App centres text globally, which centred title and meta against each other */}
               <div className="text-start">
-                <h6 className="mb-0">{part.title}</h6>
+                 <h6 className="mb-0">
+                   {part.title}
+                   {isRereading && part.isFinished && (
+                     <i className="bi bi-check-circle-fill text-success ms-2" role="img" aria-label="Finished this pass" />
+                   )}
+                 </h6>
                 <small className="text-muted">
                   Added: {formatDate(part.createdAt ?? '')}
                   {(part.totalWords ?? 0) > 0 && part.unknownWordPercentage != null && (
@@ -1013,6 +1096,37 @@ const BookDetail = () => {
           This book doesn't have any parts yet.
         </Alert>
       )}
+
+      <Modal
+        show={readingAction !== null}
+        onHide={() => { if (!savingReadingAction) setReadingAction(null); }}
+        backdrop={savingReadingAction ? 'static' : true}
+        keyboard={!savingReadingAction}
+        aria-labelledby="book-reading-action-title"
+      >
+        <Modal.Header closeButton={!savingReadingAction}>
+          <Modal.Title id="book-reading-action-title">{isUndoFinish ? 'Undo finish' : 'Start reread'}</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="mb-0">
+            {isUndoFinish
+              ? 'Restore the section progress from before you marked this book finished.'
+              : 'Begin a new reading pass at the first section. Your reading totals, bookmarks, and audiobook position are kept.'}
+          </p>
+          {isUndoFinish && isLinkedToHardcover && (
+            <p className="text-muted mt-2 mb-0">Edit any status or rating already synced directly on Hardcover.</p>
+          )}
+          {readingActionError && <Alert variant="danger" className="mt-3 mb-0">{readingActionError}</Alert>}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="outline-secondary" disabled={savingReadingAction} onClick={() => setReadingAction(null)}>
+            Cancel
+          </Button>
+          <Button disabled={savingReadingAction} onClick={submitReadingAction}>
+            {savingReadingAction ? 'Saving…' : isUndoFinish ? 'Undo finish' : 'Start reread'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
 
       {/* Finish Book / Rating Modal */}
       <Modal

@@ -32,6 +32,9 @@ namespace LinguaReadApi.Controllers
         private readonly ILogger<BooksController> _logger;
         private readonly IHardcoverService? _hardcoverService;
         private readonly HardcoverSyncChannel? _hardcoverSyncChannel;
+        private readonly HardcoverOperationLock? _hardcoverOperationLock;
+        // Lesson study history preserves completion evidence across statistics resets.
+        private static readonly DateTime LessonStudyHistoryIntroducedAt = new(2026, 11, 19, 19, 3, 42, DateTimeKind.Utc);
         private readonly WordLinkingChannel? _wordLinkingChannel;
         private readonly ChapterDetectionService _chapterDetectionService;
         /// <summary>Where uploaded audiobook media lives; tests use an isolated temp directory.</summary>
@@ -41,13 +44,15 @@ namespace LinguaReadApi.Controllers
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         };
 
-        public BooksController(AppDbContext context, ILogger<BooksController> logger, ChapterDetectionService chapterDetectionService, IHardcoverService? hardcoverService = null, WordLinkingChannel? wordLinkingChannel = null, HardcoverSyncChannel? hardcoverSyncChannel = null)
+        public BooksController(AppDbContext context, ILogger<BooksController> logger, ChapterDetectionService chapterDetectionService, IHardcoverService? hardcoverService = null, WordLinkingChannel? wordLinkingChannel = null,
+            HardcoverSyncChannel? hardcoverSyncChannel = null, HardcoverOperationLock? hardcoverOperationLock = null)
         {
             _context = context;
             _logger = logger;
             _chapterDetectionService = chapterDetectionService;
             _hardcoverService = hardcoverService;
             _hardcoverSyncChannel = hardcoverSyncChannel;
+            _hardcoverOperationLock = hardcoverOperationLock;
             _wordLinkingChannel = wordLinkingChannel;
         }
 
@@ -113,7 +118,8 @@ namespace LinguaReadApi.Controllers
                     LanguageName = b.Language.Name,
                     CreatedAt = b.CreatedAt,
                     PartCount = b.Texts.Count,
-                    FinishedPartCount = b.Texts.Count(t => t.IsFinished),
+                    FinishedPartCount = b.Texts.Count(t => t.IsFinished &&
+                        (b.RereadStartedAt == null || t.LastCompletedAt >= b.RereadStartedAt)),
                     LastReadTextId = b.LastReadTextId,
                     LastReadAt = b.LastReadAt,
                     TotalWords = b.TotalWords,
@@ -185,13 +191,15 @@ namespace LinguaReadApi.Controllers
                 LearningWords = book.LearningWords,
                 StatsUpdatedAt = book.StatsUpdatedAt,
                 IsFinished = book.IsFinished,
+                RereadStartedAt = book.RereadStartedAt,
+                UndoFinishAt = (await GetFinishUndoAsync(book))?.FinishedAt,
                 Parts = book.Texts.OrderBy(t => t.PartNumber).Select(t => new TextPartDto
                 {
                     TextId = t.TextId,
                     Title = t.Title,
                     PartNumber = t.PartNumber ?? 0,
                     CreatedAt = t.CreatedAt,
-                    IsFinished = t.IsFinished,
+                    IsFinished = book.IsPartFinished(t),
                     TotalWords = t.TotalWords,
                     KnownWords = t.KnownWords,
                     StatsUpdatedAt = t.StatsUpdatedAt
@@ -1082,6 +1090,8 @@ namespace LinguaReadApi.Controllers
                     book.KnownWords = 0;
                     book.LearningWords = 0;
                     book.IsFinished = false;
+                    book.RereadStartedAt = null;
+                    book.FinishUndoJson = null;
                     book.HardcoverPendingFinishAfterReadId = null;
                     book.StatsUpdatedAt = null;
                     await _context.SaveChangesAsync();
@@ -2208,9 +2218,14 @@ namespace LinguaReadApi.Controllers
 
         // PUT: api/books/5/lastread
         [HttpPut("{id}/lastread")]
-        public async Task<IActionResult> UpdateLastRead(int id, [FromBody] UpdateLastReadDto updateDto)
+        public Task<IActionResult> UpdateLastRead(int id, [FromBody] UpdateLastReadDto updateDto)
         {
             var userId = GetUserId();
+            return LessonStudyActivity.AtomicAsync(_context, userId, () => UpdateLastReadAsync(userId, id, updateDto));
+        }
+
+        private async Task<IActionResult> UpdateLastReadAsync(Guid userId, int id, UpdateLastReadDto updateDto)
+        {
             
             var book = await _context.Books
                 .Where(b => b.BookId == id && b.UserId == userId)
@@ -2243,14 +2258,19 @@ namespace LinguaReadApi.Controllers
 
             // Stale-replay guard: a late-draining offline last-read save must not
             // clobber a newer marker the server already holds.
-            if (updateDto.ClientUpdatedAt.HasValue && book.LastReadAt.HasValue
-                && book.LastReadAt.Value > effectiveClientTs)
+            if (updateDto.ClientUpdatedAt.HasValue &&
+                (book.LastReadAt > effectiveClientTs || book.RereadStartedAt > effectiveClientTs))
             {
                 return NoContent();
             }
 
             book.LastReadTextId = updateDto.TextId;
             book.LastReadAt = effectiveClientTs;
+            // Cached reader responses can skip the usual LastAccessedAt update.
+            if (book.RereadStartedAt.HasValue && (text.LastAccessedAt == null || text.LastAccessedAt < effectiveClientTs))
+            {
+                text.LastAccessedAt = effectiveClientTs;
+            }
 
             await _context.SaveChangesAsync();
 
@@ -2281,11 +2301,11 @@ namespace LinguaReadApi.Controllers
                 {
                     lessonRecorded = false;
                     _context.ChangeTracker.Clear();
-                    var now = DateTime.UtcNow;
                     double completionPercentage;
 
                     await using var transaction = await _context.Database.BeginTransactionAsync(LessonStudyActivity.LockedIsolation(_context));
                     await LessonStudyActivity.LockAsync(_context, userId);
+                    var now = DateTime.UtcNow;
 
                     var book = await _context.Books
                         .Where(b => b.BookId == id && b.UserId == userId)
@@ -2320,7 +2340,9 @@ namespace LinguaReadApi.Controllers
                         return Conflict(new { message = "This action ID belongs to a different study action." });
                     if (previousEvent == null && lessonDto.SourceRevision != null && lessonDto.SourceRevision != LessonStudyActivity.Revision(text.Content, text.LanguageId, text.AudioFilePath))
                         return Conflict(new { message = "This lesson changed. Reload it before recording another pass." });
+                    var rereadStartedAt = book.RereadStartedAt;
                     bool isRetry = previousEvent != null || (!lessonDto.Repeat && text.LastCompletedAt.HasValue
+                        && (rereadStartedAt == null || text.LastCompletedAt >= rereadStartedAt)
                         && now - text.LastCompletedAt.Value < retryWindow);
 
                     if (isRetry)
@@ -2337,7 +2359,8 @@ namespace LinguaReadApi.Controllers
                         var retryCounts = await _context.Texts
                             .Where(t => t.BookId == id)
                             .GroupBy(t => 1)
-                            .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                            .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished &&
+                                (rereadStartedAt == null || t.LastCompletedAt >= rereadStartedAt)) })
                             .FirstOrDefaultAsync();
                         int totalTextsRetry = retryCounts?.Total ?? 0;
                         int finishedTextsRetry = retryCounts?.Finished ?? 0;
@@ -2419,12 +2442,13 @@ namespace LinguaReadApi.Controllers
                         stats.LastUpdatedAt = now;
                     }
 
-                    // Pre-count texts once; the only IsFinished flip in this request is the current
-                    // text when isFirstCompletion is true, so the post-update count is derivable.
+                    // Count completed sections in this pass before updating the current section.
+                    var partWasFinished = book.IsPartFinished(text);
                     var textCounts = await _context.Texts
                         .Where(t => t.BookId == id)
                         .GroupBy(t => 1)
-                        .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished) })
+                        .Select(g => new { Total = g.Count(), Finished = g.Count(t => t.IsFinished &&
+                            (rereadStartedAt == null || t.LastCompletedAt >= rereadStartedAt)) })
                         .FirstOrDefaultAsync();
                     int totalTexts = textCounts?.Total ?? 0;
                     int existingFinished = textCounts?.Finished ?? 0;
@@ -2463,7 +2487,7 @@ namespace LinguaReadApi.Controllers
                     }
                     text.LastCompletedAt = now;
 
-                    int finishedTexts = existingFinished + (isFirstCompletion ? 1 : 0);
+                    int finishedTexts = existingFinished + (partWasFinished ? 0 : 1);
                     if (totalTexts > 0 && finishedTexts >= totalTexts)
                     {
                         book.IsFinished = true;
@@ -2518,46 +2542,51 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
 
+            var rating = request?.Rating;
+            if (rating is < 0.5m or > 5.0m)
+            {
+                return BadRequest("Rating must be between 0.5 and 5.0.");
+            }
+
             var errorResult = await LessonStudyActivity.AtomicAsync<IActionResult?>(_context, userId, async () =>
             {
-                var now = DateTime.UtcNow;
-
                 var book = await _context.Books
                     .Where(b => b.BookId == id && b.UserId == userId)
                     .Include(b => b.Texts)
                     .FirstOrDefaultAsync();
+                if (book == null) return NotFound("Book not found");
 
-                if (book == null)
+                var undo = ReadFinishUndo(book);
+                if (!book.IsFinished)
                 {
-                    return NotFound("Book not found");
+                    // Keep receipt and database timestamps at PostgreSQL's precision.
+                    var now = DateTime.UtcNow;
+                    var finishedAt = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
+                    var remaining = book.Texts.Where(text => !book.IsPartFinished(text)).ToArray();
+                    var previousRating = new PendingFinishRating(book.HardcoverPendingRating,
+                        book.HardcoverPendingRatingId, book.HardcoverPendingRatingBookId);
+                    undo = new FinishUndo(finishedAt, book.LastReadAt,
+                        remaining.Select(text => new FinishUndoPart(text.TextId, text.IsFinished, text.LastCompletedAt)).ToArray(),
+                        previousRating, RatingId: null);
+
+                    // Mark the remaining sections complete without recording reading activity.
+                    foreach (var text in remaining)
+                    {
+                        text.IsFinished = true;
+                        text.LastCompletedAt = finishedAt;
+                    }
+                    book.LastReadAt = finishedAt;
+                    book.IsFinished = true;
                 }
 
-                // Validate / normalize rating: must be in [0.5, 5.0] in 0.5 increments.
-                if (request?.Rating.HasValue == true)
+                if (rating is { } value)
                 {
-                    var raw = request.Rating.Value;
-                    if (raw < 0.5m || raw > 5.0m)
-                    {
-                        return BadRequest("Rating must be between 0.5 and 5.0.");
-                    }
-
-                    // Save the rating with the finish so synchronization can retry it.
-                    book.HardcoverPendingRating = Math.Round(raw * 2m, MidpointRounding.AwayFromZero) / 2m;
+                    book.HardcoverPendingRating = Math.Round(value * 2m, MidpointRounding.AwayFromZero) / 2m;
                     book.HardcoverPendingRatingId = Guid.NewGuid();
                     book.HardcoverPendingRatingBookId = book.HardcoverBookId;
+                    if (undo != null) undo = undo with { RatingId = book.HardcoverPendingRatingId };
                 }
-
-                // Mark unfinished child texts as finished — child-text completion is part of
-                // "book is done" semantics, not a stat. We deliberately do NOT touch word
-                // statuses, language counters, or UserActivity.
-                foreach (var text in book.Texts.Where(t => !t.IsFinished))
-                {
-                    text.IsFinished = true;
-                    text.LastCompletedAt = now;
-                }
-
-                book.LastReadAt = now;
-                book.IsFinished = true;
+                if (undo != null) book.FinishUndoJson = JsonSerializer.Serialize(undo);
 
                 await _context.SaveChangesAsync();
                 return null;
@@ -2568,6 +2597,117 @@ namespace LinguaReadApi.Controllers
             await TriggerHardcoverProgressSyncAsync(userId, id);
 
             return NoContent();
+        }
+
+        [HttpPut("{id}/undo-finish")]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> UndoBookFinish(int id, [FromBody] UndoBookFinishRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var userId = GetUserId();
+            using var hardcoverLock = _hardcoverOperationLock == null ? null
+                : await _hardcoverOperationLock.AcquireAsync(userId, cancellationToken);
+            return await LessonStudyActivity.AtomicAsync<IActionResult>(_context, userId, async () =>
+            {
+                var book = await _context.Books.Include(b => b.Texts)
+                    .SingleOrDefaultAsync(b => b.BookId == id && b.UserId == userId, cancellationToken);
+                if (book == null) return NotFound("Book not found");
+                if (!book.IsFinished) return NoContent();
+
+                var undo = await GetFinishUndoAsync(book);
+                if (undo == null) return Conflict(new { message = "There is no manual finish to undo for this book." });
+                if (undo.FinishedAt != request.FinishedAt.UtcDateTime)
+                    return Conflict(new { message = "This book was finished again. Reload it before undoing the new finish." });
+
+                var previousParts = undo.Parts.ToDictionary(part => part.TextId);
+                foreach (var text in book.Texts)
+                {
+                    if (text.LastCompletedAt != undo.FinishedAt || !previousParts.TryGetValue(text.TextId, out var part)) continue;
+                    text.IsFinished = part.IsFinished;
+                    text.LastCompletedAt = part.LastCompletedAt;
+                }
+
+                if (book.LastReadAt == undo.FinishedAt) book.LastReadAt = undo.LastReadAt;
+                if (undo.RatingId.HasValue && book.HardcoverPendingRatingId == undo.RatingId)
+                {
+                    book.HardcoverPendingRating = undo.PreviousRating?.Value;
+                    book.HardcoverPendingRatingId = undo.PreviousRating?.Id;
+                    book.HardcoverPendingRatingBookId = undo.PreviousRating?.BookId;
+                }
+                book.IsFinished = book.Texts.Count > 0 && book.Texts.All(book.IsPartFinished);
+                book.FinishUndoJson = null;
+                book.HardcoverPendingFinishAfterReadId = null;
+                await _context.SaveChangesAsync(cancellationToken);
+                return NoContent();
+            });
+        }
+
+        [HttpPut("{id}/reread")]
+        [ProducesResponseType(typeof(DateTime), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public async Task<ActionResult<DateTime>> StartBookReread(int id, CancellationToken cancellationToken = default)
+        {
+            var userId = GetUserId();
+            using var hardcoverLock = _hardcoverOperationLock == null ? null
+                : await _hardcoverOperationLock.AcquireAsync(userId, cancellationToken);
+            return await LessonStudyActivity.AtomicAsync<ActionResult<DateTime>>(_context, userId, async () =>
+            {
+                var book = await _context.Books.SingleOrDefaultAsync(b => b.BookId == id && b.UserId == userId, cancellationToken);
+                if (book == null) return NotFound("Book not found");
+                if (book.IsRereading) return Ok(book.RereadStartedAt!.Value);
+                if (!book.IsFinished || !await _context.Texts.AnyAsync(t => t.BookId == id && t.UserId == userId, cancellationToken))
+                {
+                    return Conflict(new { message = "A reread starts from a completed book with at least one section." });
+                }
+
+                var startedAt = DateTime.UtcNow;
+                book.RereadStartedAt = startedAt;
+                book.IsFinished = false;
+                book.LastReadAt = startedAt;
+                book.LastReadTextId = null;
+                book.LastReadPartId = null;
+                book.FinishUndoJson = null;
+                await _context.SaveChangesAsync(cancellationToken);
+                return Ok(startedAt);
+            });
+        }
+
+        private sealed record FinishUndoPart(int TextId, bool IsFinished, DateTime? LastCompletedAt);
+        private sealed record PendingFinishRating(decimal? Value, Guid? Id, int? BookId);
+        private sealed record FinishUndo(DateTime FinishedAt, DateTime? LastReadAt, FinishUndoPart[] Parts,
+            PendingFinishRating? PreviousRating, Guid? RatingId);
+
+        private static FinishUndo? ReadFinishUndo(Book book) => book.FinishUndoJson == null
+            ? null : JsonSerializer.Deserialize<FinishUndo>(book.FinishUndoJson);
+
+        private async Task<FinishUndo?> GetFinishUndoAsync(Book book)
+        {
+            if (!book.IsFinished) return null;
+            var recorded = ReadFinishUndo(book);
+            if (recorded != null) return recorded;
+
+            // Older manual finishes stamped only their remaining sections with the book's
+            // last-read time. A real completion also left an activity row or study event.
+            if (book.RereadStartedAt.HasValue || book.LastReadAt is not { } finishedAt || finishedAt < LessonStudyHistoryIntroducedAt)
+                return null;
+            var parts = book.Texts.Where(text => text.IsFinished && text.LastCompletedAt == finishedAt)
+                .Select(text => new FinishUndoPart(text.TextId, false, null)).ToArray();
+            if (parts.Length == 0) return null;
+
+            var textIds = parts.Select(part => part.TextId).ToArray();
+            if (await _context.UserActivities.AnyAsync(a => a.UserId == book.UserId && a.LanguageId == book.LanguageId
+                    && (a.ActivityType == "TextCompleted" || a.ActivityType == "BookFinished") && a.Timestamp == finishedAt)
+                || await _context.LessonStudyEvents.AnyAsync(e => e.UserId == book.UserId && textIds.Contains(e.SourceTextId)
+                    && e.Kind == "read" && e.IsCompletionCheckpoint && e.CreatedAt >= finishedAt))
+            {
+                return null;
+            }
+
+            // The old action did not save the pre-finish last-read timestamp.
+            return new FinishUndo(finishedAt, book.LastReadAt, parts, PreviousRating: null, RatingId: book.HardcoverPendingRatingId);
         }
 
         // GET: api/books/5/next-lesson
@@ -3404,6 +3544,11 @@ namespace LinguaReadApi.Controllers
         public int SortOrder { get; set; }
     }
 
+    public sealed class UndoBookFinishRequest
+    {
+        public required DateTimeOffset FinishedAt { get; init; }
+    }
+
     public class BookDetailDto
     {
         public int BookId { get; set; }
@@ -3431,6 +3576,8 @@ namespace LinguaReadApi.Controllers
         public int LearningWords { get; set; }
         public DateTime? StatsUpdatedAt { get; set; }
         public bool IsFinished { get; set; }
+        public DateTime? RereadStartedAt { get; set; }
+        public DateTime? UndoFinishAt { get; set; }
         public int UnknownWords => Math.Max(TotalWords - KnownWords, 0);
         public double? UnknownWordPercentage =>
             TotalWords > 0 ? Math.Round((double)(TotalWords - KnownWords) / TotalWords * 100, 1) : (double?)null;

@@ -131,6 +131,41 @@ public class HardcoverServiceTests
     }
 
     [Fact]
+    public async Task SyncProgressAsync_LeavesHardcoverAloneDuringALocalReread()
+    {
+        await using var context = CreateContext();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var languageId = await SeedLanguageAsync(context);
+        var book = new Book
+        {
+            Title = "Reread", UserId = userId, LanguageId = languageId, HardcoverBookId = 99,
+            RereadStartedAt = DateTime.UtcNow
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        context.Texts.Add(new Text
+        {
+            BookId = book.BookId, UserId = userId, LanguageId = languageId,
+            Title = "Section", Content = "One sentence.", IsFinished = true
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 3, "user_book_reads": [], "completed_reads": [{ "id": 555 }] }] }] } }""")
+        ]);
+        var service = CreateService(context, handler);
+        Assert.True((await service.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true)).Skipped);
+        Assert.True((await service.SyncProgressAsync(userId, book.BookId)).Skipped);
+        Assert.True(Assert.Single((await service.SyncAllAsync(userId)).Results).Skipped);
+        Assert.Equal(0, handler.RequestCount);
+
+        book.IsFinished = true;
+        await context.SaveChangesAsync();
+        Assert.True((await service.SyncProgressAsync(userId, book.BookId)).Success);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task MatchBookAsync_StillWorks_WhenExternalWritesDisabled()
     {
         // Matching only reads from Hardcover and updates the local book, so staging keeps it.

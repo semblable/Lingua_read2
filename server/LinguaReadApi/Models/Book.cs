@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace LinguaReadApi.Models
 {
@@ -65,6 +66,15 @@ namespace LinguaReadApi.Models
         public int LearningWords { get; set; } = 0;
         public DateTime? LastReadAt { get; set; }
         public bool IsFinished { get; set; } = false;
+        public DateTime? RereadStartedAt { get; set; }
+        [JsonIgnore]
+        public string? FinishUndoJson { get; set; }
+
+        internal bool IsRereading => !IsFinished && RereadStartedAt.HasValue;
+
+        // Text.IsFinished records lifetime completion. A reread tracks the current pass separately.
+        internal bool IsPartFinished(Text part) =>
+            part.IsFinished && (RereadStartedAt == null || part.LastCompletedAt >= RereadStartedAt);
 
         // Last time the cached word stats (TotalWords/KnownWords/LearningWords)
         // were recomputed. Populated by lesson completion and the nightly

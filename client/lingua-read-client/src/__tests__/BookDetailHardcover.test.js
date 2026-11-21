@@ -22,6 +22,8 @@ import {
 vi.mock('../utils/api', () => ({
   getBook: vi.fn(),
   finishBook: vi.fn(),
+  undoBookFinish: vi.fn(),
+  startBookReread: vi.fn(),
   updateBook: vi.fn(),
   deleteBook: vi.fn(),
   getText: vi.fn(),
@@ -468,6 +470,8 @@ describe('BookDetail Hardcover integration', () => {
   });
 
   test('unlinked Finish Book modal hides star picker and shows single Finish book button', async () => {
+    getBook.mockResolvedValueOnce(defaultBook)
+      .mockResolvedValue({ ...defaultBook, isFinished: true, undoFinishAt: '2026-11-21T12:00:00Z' });
     finishBook.mockResolvedValue(undefined);
 
     renderBookDetail();
@@ -486,6 +490,8 @@ describe('BookDetail Hardcover integration', () => {
     await waitFor(() => expect(finishBook).toHaveBeenCalledWith('7', null));
     expect(await screen.findByText('Completed')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('button', { name: /^finish book$/i })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    expect(await screen.findByText('Undo finish')).toBeVisible();
   });
 
   test('linked Finish Book modal hides star picker when Hardcover sync is disabled in Settings', async () => {
@@ -511,10 +517,8 @@ describe('BookDetail Hardcover integration', () => {
   });
 
   test('linked Finish Book modal sends selected half-star rating', async () => {
-    getBook.mockResolvedValue({
-      ...defaultBook,
-      hardcoverBookId: 55
-    });
+    const linkedBook = { ...defaultBook, hardcoverBookId: 55 };
+    getBook.mockResolvedValueOnce(linkedBook).mockResolvedValue({ ...linkedBook, isFinished: true });
     finishBook.mockResolvedValue(undefined);
 
     renderBookDetail({
@@ -542,10 +546,8 @@ describe('BookDetail Hardcover integration', () => {
 
   test('linked Finish Book modal puts spinner on the exact clicked button when clicking Finish without rating after selecting stars', async () => {
     const finishDeferred = deferred();
-    getBook.mockResolvedValue({
-      ...defaultBook,
-      hardcoverBookId: 55
-    });
+    const linkedBook = { ...defaultBook, hardcoverBookId: 55 };
+    getBook.mockResolvedValueOnce(linkedBook).mockResolvedValue({ ...linkedBook, isFinished: true });
     finishBook.mockImplementationOnce(() => finishDeferred.promise);
 
     renderBookDetail({

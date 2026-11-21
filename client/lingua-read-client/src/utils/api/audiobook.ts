@@ -194,7 +194,8 @@ export const getSentenceProgress = async (
   const serverProgress = remote.status === 'fulfilled' ? remote.value : null;
   const cached = readCachedSentenceProgress(textId);
   const cacheChangedDuringLoad = cached && (cached.cursorUpdatedAt !== cachedBeforeLoad?.cursorUpdatedAt
-    || cached.lastSegmentIndex !== cachedBeforeLoad.lastSegmentIndex
+    || cached.lastSegmentIndex !== cachedBeforeLoad?.lastSegmentIndex
+    || cached.cursorResetAt !== cachedBeforeLoad?.cursorResetAt
     || cached.creditedSegmentIndices.length !== cachedBeforeLoad?.creditedSegmentIndices.length
     || JSON.stringify(cached.sourceCoverage) !== JSON.stringify(cachedBeforeLoad?.sourceCoverage));
   // A fresh GET can replace the cache after a restore. Merge only a confirmation
@@ -202,8 +203,9 @@ export const getSentenceProgress = async (
   const confirmed = serverProgress
     ? rememberSentenceProgress(textId, serverProgress, !cacheChangedDuringLoad) ?? serverProgress
     : cached;
-  let lastSegmentIndex = confirmed?.lastSegmentIndex ?? serverProgress?.lastSegmentIndex ?? null;
+  let lastSegmentIndex = confirmed?.lastSegmentIndex ?? null;
   let cursorUpdatedAt = confirmed?.cursorUpdatedAt ?? null;
+  const cursorResetAt = confirmed?.cursorResetAt ?? null;
   const hasConfirmedCursor = lastSegmentIndex != null;
   const serverTime = estimatedSentenceServerTime();
   const confirmedCoverage = confirmed?.sourceCoverage ?? null;
@@ -219,6 +221,7 @@ export const getSentenceProgress = async (
     const queuedAt = queuedSentenceCursorTime(op.payload.clientUpdatedAt, op.enqueuedAt);
     const segmentIndex = op.payload.currentSegmentIndex;
     if (queuedAt && segmentIndex != null && segmentIndex >= 0
+        && (!cursorResetAt || Date.parse(queuedAt) >= Date.parse(cursorResetAt))
         && (!hasConfirmedCursor || serverTime === undefined || Date.parse(queuedAt) <= serverTime)
         && (!cursorUpdatedAt || Date.parse(queuedAt) >= Date.parse(cursorUpdatedAt))) {
       lastSegmentIndex = segmentIndex;
@@ -231,13 +234,14 @@ export const getSentenceProgress = async (
       confirmedForDifferentRevision ? [] : (confirmed?.creditedSegmentIndices ?? []));
   }
 
-  const cursorUnknown = remote.status === 'rejected' && lastSegmentIndex == null;
+  const cursorUnknown = remote.status === 'rejected' && lastSegmentIndex == null && !cursorResetAt;
   if (cursorUnknown && !credited.size) throw remote.reason;
   return {
     ...serverProgress,
     textId: Number(textId),
     lastSegmentIndex,
     cursorUpdatedAt,
+    ...(cursorResetAt ? { cursorResetAt } : {}),
     ...(sourceCoverage ? { sourceCoverage } : {}),
     ...(cursorUnknown ? { cursorUnknown: true } : {}),
     creditedSegmentIndices: [...credited].sort((a, b) => a - b)

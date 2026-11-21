@@ -65,6 +65,7 @@ export function includeSentenceReadRanges(
 type CachedSentenceProgress = {
   lastSegmentIndex: number | null;
   cursorUpdatedAt: string | null;
+  cursorResetAt?: string | null;
   creditedSegmentIndices: number[];
   sourceCoverage?: SentenceSourceCoverage;
 };
@@ -72,6 +73,7 @@ type CachedSentenceProgress = {
 type SentenceProgressSnapshot = {
   lastSegmentIndex?: number | null;
   cursorUpdatedAt?: string | null;
+  cursorResetAt?: string | null;
   creditedSegmentIndices?: number[] | null;
   sourceCoverage?: SentenceSourceCoverage | null;
   serverTime?: string;
@@ -103,14 +105,19 @@ export function rememberSentenceProgress(
   const incoming = hasCursor(progress) ? progress : null;
   const latest = hasCursor(cached) && (!incoming || Date.parse(cached.cursorUpdatedAt) > Date.parse(incoming.cursorUpdatedAt))
     ? cached : incoming;
+  const cursorResetAt = cached?.cursorResetAt && (!progress?.cursorResetAt ||
+    Date.parse(cached.cursorResetAt) > Date.parse(progress.cursorResetAt)) ? cached.cursorResetAt : progress?.cursorResetAt;
+  const currentCursor = latest && (!cursorResetAt || Date.parse(latest.cursorUpdatedAt) >= Date.parse(cursorResetAt))
+    ? latest : null;
   const credited = new Set([...(cached?.creditedSegmentIndices ?? []), ...(progress?.creditedSegmentIndices ?? [])]);
-  if (!latest && !credited.size) {
+  if (!currentCursor && !credited.size && !cursorResetAt) {
     if (replace) forgetSentenceProgress(textId);
     return null;
   }
   const snapshot = {
-    lastSegmentIndex: latest?.lastSegmentIndex ?? null,
-    cursorUpdatedAt: latest?.cursorUpdatedAt ?? null,
+    lastSegmentIndex: currentCursor?.lastSegmentIndex ?? null,
+    cursorUpdatedAt: currentCursor?.cursorUpdatedAt ?? null,
+    ...(cursorResetAt ? { cursorResetAt } : {}),
     creditedSegmentIndices: [...credited].sort((a, b) => a - b),
     sourceCoverage: progress?.sourceCoverage ? mergeSentenceCoverage(cached?.sourceCoverage, progress.sourceCoverage)
       : cached?.sourceCoverage

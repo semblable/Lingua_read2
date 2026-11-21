@@ -104,6 +104,7 @@ namespace LinguaReadApi.Controllers
                 .ToDictionaryAsync(l => l.LanguageId, l => new { l.Name, l.Code });
 
             var languageStats = new List<LanguageStatisticsDto>();
+            var finishedBooks = books.Where(book => book.IsFinished || book.RereadStartedAt.HasValue).ToList();
 
             foreach(var langId in allLanguageIds)
             {
@@ -159,7 +160,7 @@ namespace LinguaReadApi.Controllers
                     TotalTextsCompleted = stats.TotalTextsCompleted,
                     TotalSecondsListened = (int)stats.TotalSecondsListened,
                     BookCount = books.Count(b => b.LanguageId == langId),
-                    FinishedBookCount = books.Count(b => b.LanguageId == langId && b.IsFinished),
+                    FinishedBookCount = finishedBooks.Count(b => b.LanguageId == langId),
                     CefrLevel = cefr.Level,
                     NextCefrLevel = cefr.NextLevel,
                     KnownWordsToNextLevel = cefr.KnownToNext,
@@ -174,7 +175,7 @@ namespace LinguaReadApi.Controllers
                 KnownWords = knownWords,
                 LearningWords = totalWords - knownWords,
                 TotalBooks = books.Count,
-                FinishedBooks = books.Count(b => b.IsFinished),
+                FinishedBooks = finishedBooks.Count,
                 LastActivity = DateTime.UtcNow,
                 TotalLanguages = languageStats.Count,
                 LanguageStatistics = languageStats
@@ -638,7 +639,10 @@ namespace LinguaReadApi.Controllers
                 var candidateTexts = await _context.Texts
                     .Where(t => t.UserId == userId
                              && t.LastAccessedAt != null
-                             && !t.IsFinished
+                             && (t.Book == null || t.Book.RereadStartedAt == null
+                                 ? !t.IsFinished
+                                 : t.LastAccessedAt >= t.Book.RereadStartedAt &&
+                                     (!t.IsFinished || t.LastCompletedAt == null || t.LastCompletedAt < t.Book.RereadStartedAt))
                              && t.Tag != "srs-story"
                              && allLanguageIds.Contains(t.LanguageId))
                     .OrderByDescending(t => t.LastAccessedAt)

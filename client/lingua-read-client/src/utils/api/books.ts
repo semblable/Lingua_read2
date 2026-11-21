@@ -152,10 +152,13 @@ export const completeLesson = async (
   bookId: number | string | null,
   textId: number | string,
   skipStats: boolean = false,
-  study: { repeat?: boolean; sourceRevision?: string } = {}
+  study: { repeat?: boolean; sourceRevision?: string; rereadStartedAt?: string } = {}
 ): Promise<unknown> => {
   if (!navigator.onLine) throw new Error('Connect to record a completed read. Sentence progress still uses the existing offline queue.');
-  const intent = skipStats ? null : studyIntent(textId, study.repeat ? 'read-repeat' : 'read-complete', study.sourceRevision);
+  const { rereadStartedAt, ...completion } = study;
+  const kind = completion.repeat ? 'read-repeat' : 'read-complete';
+  const intentKind = rereadStartedAt ? `${kind}:${rereadStartedAt}` : kind;
+  const intent = skipStats ? null : studyIntent(textId, intentKind, completion.sourceRevision);
   let result: unknown;
   if (bookId) {
     if (skipStats) {
@@ -165,14 +168,14 @@ export const completeLesson = async (
     }
     result = await fetchApi(`/books/${bookId}/complete-lesson`, {
       method: 'PUT',
-      body: JSON.stringify({ textId, clientEventId: intent?.id, ...study })
+      body: JSON.stringify({ textId, clientEventId: intent?.id, ...completion })
     });
   } else {
     const query = new URLSearchParams();
     if (skipStats) query.set('skipStats', 'true');
     if (intent) query.set('clientEventId', intent.id);
-    if (study.repeat) query.set('repeat', 'true');
-    if (study.sourceRevision) query.set('sourceRevision', study.sourceRevision);
+    if (completion.repeat) query.set('repeat', 'true');
+    if (completion.sourceRevision) query.set('sourceRevision', completion.sourceRevision);
     const queryString = query.toString();
     result = await fetchApi(`/texts/${textId}/complete${queryString ? `?${queryString}` : ''}`, { method: 'PUT' });
   }
@@ -190,6 +193,12 @@ export const finishBook = (
     body: JSON.stringify({ rating })
   });
 };
+
+export const undoBookFinish = (bookId: number | string, finishedAt: string): Promise<void> =>
+  fetchApi<void>(`/books/${bookId}/undo-finish`, { method: 'PUT', body: JSON.stringify({ finishedAt }) });
+
+export const startBookReread = (bookId: number | string): Promise<string> =>
+  fetchApi<string>(`/books/${bookId}/reread`, { method: 'PUT' });
 
 // Get next lesson from a book
 export const getNextLesson = (

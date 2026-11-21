@@ -3,13 +3,13 @@ import { Alert, Button, Dropdown, Form, InputGroup, Modal } from 'react-bootstra
 import { completeLesson, getLessonStudy, recordLessonListen, setLessonStudyCount, type LessonStudyCounts } from '../../utils/api';
 import './LessonStudyPanel.css';
 
-type Props = { textId: number; bookId?: number | null; sourceRevision?: string; hasAudio: boolean };
+type Props = { textId: number; bookId?: number | null; sourceRevision?: string; rereadStartedAt?: string | null; hasAudio: boolean };
 
 export default function LessonStudyPanel(props: Props) {
   return <LessonStudyPanelBody key={`${props.textId}:${props.sourceRevision ?? ''}`} {...props} />;
 }
 
-function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Props) {
+function LessonStudyPanelBody({ textId, bookId, sourceRevision, rereadStartedAt, hasAudio }: Props) {
   const [counts, setCounts] = useState<LessonStudyCounts | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -53,8 +53,11 @@ function LessonStudyPanelBody({ textId, bookId, sourceRevision, hasAudio }: Prop
     working.current = true; setBusy(true); setError(''); setNotice('');
     const activeText = textId;
     try {
-      if (kind === 'read') await completeLesson(bookId ?? null, textId, false, { repeat: true, sourceRevision });
-      else await recordLessonListen(textId, sourceRevision, seconds);
+      if (kind === 'read') {
+        await completeLesson(bookId ?? null, textId, false, {
+          repeat: true, sourceRevision, ...(rereadStartedAt ? { rereadStartedAt } : {})
+        });
+      } else await recordLessonListen(textId, sourceRevision, seconds);
       if (currentText.current !== activeText) return;
       setEditor(null);
       setShowListen(false);

@@ -87,6 +87,19 @@ test('a lost read response retries the same ID, then a new intentional pass gets
   await completeLesson(5, 44, false, { repeat: true, sourceRevision: 'rev' });
   expect(body(2).clientEventId).not.toBe(body(1).clientEventId);
 });
+test('a new book reread uses a separate completion ID from an earlier pass', async () => {
+  vi.mocked(fetchApi).mockRejectedValueOnce(new TypeError('lost earlier response'))
+    .mockRejectedValueOnce(new TypeError('lost reread response')).mockResolvedValue({});
+  await expect(completeLesson(5, 44, false, { sourceRevision: 'rev' })).rejects.toThrow('lost earlier response');
+  const reread = { sourceRevision: 'rev', rereadStartedAt: '2026-11-21T12:00:00Z' };
+  await expect(completeLesson(5, 44, false, reread)).rejects.toThrow('lost reread response');
+  await completeLesson(5, 44, false, reread);
+  const body = (i: number) => JSON.parse(String(vi.mocked(fetchApi).mock.calls[i][1]?.body));
+  expect(body(1).clientEventId).not.toBe(body(0).clientEventId);
+  expect(body(2)).toEqual(body(1));
+  expect(body(2)).not.toHaveProperty('rereadStartedAt');
+});
+
 test('listen retry retains both ID and requested credit', async () => {
   vi.mocked(fetchApi).mockRejectedValueOnce(new TypeError('lost response')).mockResolvedValue({});
   await expect(recordLessonListen(44, 'rev', 60)).rejects.toThrow();

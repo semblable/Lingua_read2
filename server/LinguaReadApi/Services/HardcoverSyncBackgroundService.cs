@@ -73,7 +73,7 @@ public sealed class HardcoverSyncBackgroundService : BackgroundService
                     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                     var pending = await context.Books
                         .Where(book => (book.HardcoverPendingRatingId != null || book.HardcoverPendingFinishAfterReadId != null) &&
-                            !book.HardcoverAutoMatchDisabled &&
+                            !book.HardcoverAutoMatchDisabled && (book.IsFinished || book.RereadStartedAt == null) &&
                             context.UserSettings.Any(settings => settings.UserId == book.UserId && settings.HardcoverSyncEnabled &&
                                 settings.HardcoverApiToken != null))
                         .OrderBy(book => book.BookId)

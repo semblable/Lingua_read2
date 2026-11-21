@@ -390,6 +390,7 @@ public class SentenceProgressDto
     public int CreditedWordCount { get; set; }
     public int? LastSegmentIndex { get; set; }
     public DateTime? CursorUpdatedAt { get; set; }
+    public DateTime? CursorResetAt { get; set; }
     public DateTime ServerTime { get; set; } = DateTime.UtcNow;
     public SentenceSourceCoverage? SourceCoverage { get; set; }
 }
@@ -403,21 +404,20 @@ public async Task<ActionResult<SentenceProgressDto>> GetSentenceProgress(int tex
         return Unauthorized("User ID not found in token.");
     }
 
-    var text = await _context.Texts
-        .AsNoTracking()
-        .FirstOrDefaultAsync(t => t.TextId == textId && t.UserId == userId);
+    var source = await _context.Texts.AsNoTracking()
+        .Where(t => t.TextId == textId && t.UserId == userId)
+        .Select(t => new { Text = t, CursorResetAt = t.Book == null ? null : t.Book.RereadStartedAt })
+        .FirstOrDefaultAsync();
+    if (source == null) return NotFound("Text not found.");
 
-    if (text == null)
-    {
-        return NotFound("Text not found.");
-    }
-
+    var text = source.Text;
     var progress = await _context.UserSentenceProgresses.FindAsync(userId, textId);
     if (progress == null)
     {
         return Ok(new SentenceProgressDto
         {
-            TextId = textId
+            TextId = textId,
+            CursorResetAt = source.CursorResetAt
         });
     }
 
@@ -431,7 +431,7 @@ public async Task<ActionResult<SentenceProgressDto>> GetSentenceProgress(int tex
             coverage = coverages.GetValueOrDefault(currentRevision) ?? new() { SourceRevision = currentRevision };
         }
     }
-    return Ok(ToSentenceProgressDto(progress, coverage));
+    return Ok(ToSentenceProgressDto(progress, coverage, source.CursorResetAt));
 }
 
 [HttpPost("logSentenceRead")]
@@ -453,16 +453,14 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
 
     return await LessonStudyActivity.AtomicAsync<ActionResult<SentenceProgressDto>>(_context, userId, async () =>
     {
-    var text = await _context.Texts
-        .AsNoTracking()
+    var readingSource = await _context.Texts.AsNoTracking()
         .Include(t => t.Language)
-        .FirstOrDefaultAsync(t => t.TextId == request.TextId && t.UserId == userId);
+        .Where(t => t.TextId == request.TextId && t.UserId == userId)
+        .Select(t => new { Text = t, CursorResetAt = t.Book == null ? null : t.Book.RereadStartedAt })
+        .FirstOrDefaultAsync();
+    if (readingSource == null) return NotFound("Text not found.");
 
-    if (text == null)
-    {
-        return NotFound("Text not found.");
-    }
-
+    var text = readingSource.Text;
     var progress = await _context.UserSentenceProgresses.FindAsync(userId, request.TextId);
     if (progress == null)
     {
@@ -558,7 +556,10 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
         var requestedAt = request.ClientUpdatedAt?.UtcDateTime ?? now;
         // An old replay can contribute new reading credit independently of the cursor.
         // Future timestamps cannot order a write against an existing cursor.
-        if (progress.LastSegmentIndex == null || (requestedAt <= now && requestedAt >= progress.UpdatedAt))
+        var cursorResetAt = readingSource.CursorResetAt;
+        var hasCurrentCursor = progress.LastSegmentIndex.HasValue && (cursorResetAt == null || progress.UpdatedAt >= cursorResetAt);
+        if ((cursorResetAt == null || requestedAt >= cursorResetAt) &&
+            (!hasCurrentCursor || (requestedAt <= now && requestedAt >= progress.UpdatedAt)))
         {
             progress.LastSegmentIndex = request.CurrentSegmentIndex;
             progress.UpdatedAt = requestedAt > now ? now : requestedAt;
@@ -627,7 +628,7 @@ public async Task<ActionResult<SentenceProgressDto>> LogSentenceRead([FromBody] 
 
     await _context.SaveChangesAsync();
 
-    return Ok(ToSentenceProgressDto(progress, currentCoverage));
+    return Ok(ToSentenceProgressDto(progress, currentCoverage, readingSource.CursorResetAt));
     });
 }
 
@@ -1192,8 +1193,9 @@ private DateTime CalculateStartDate(string period)
             return JsonSerializer.Serialize(creditedIndices.OrderBy(index => index));
         }
 
-        private static SentenceProgressDto ToSentenceProgressDto(UserSentenceProgress progress, SentenceSourceCoverage? coverage)
+        private static SentenceProgressDto ToSentenceProgressDto(UserSentenceProgress progress, SentenceSourceCoverage? coverage, DateTime? cursorResetAt)
         {
+            var hasCursor = progress.LastSegmentIndex.HasValue && (cursorResetAt == null || progress.UpdatedAt >= cursorResetAt);
             return new SentenceProgressDto
             {
                 TextId = progress.TextId,
@@ -1202,8 +1204,9 @@ private DateTime CalculateStartDate(string period)
                     .ToList(),
                 CreditedWordCount = progress.CreditedWordCount,
                 SourceCoverage = coverage,
-                LastSegmentIndex = progress.LastSegmentIndex,
-                CursorUpdatedAt = progress.LastSegmentIndex.HasValue
+                CursorResetAt = cursorResetAt,
+                LastSegmentIndex = hasCursor ? progress.LastSegmentIndex : null,
+                CursorUpdatedAt = hasCursor
                     ? DateTime.SpecifyKind(progress.UpdatedAt, DateTimeKind.Utc)
                     : null
             };

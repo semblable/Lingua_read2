@@ -78,6 +78,7 @@ public sealed class HardcoverService : IHardcoverService
     private const int LibraryBatchSize = 100;
     private const string DuplicateHardcoverBookMessage = "Another book in your library is already linked to this Hardcover book.";
     private const string UnlinkedBookMessage = "This book was unlinked from Hardcover. Choose a match to link it again.";
+    private const string RereadSyncPaused = "Hardcover progress sync resumes when this reread is finished.";
 
     private static readonly HashSet<string> AuthorNameParticles = new(StringComparer.Ordinal)
     {
@@ -281,6 +282,10 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         var book = await GetOwnedBookAsync(userId, bookId, includeTexts: true, cancellationToken);
+        if (book.IsRereading)
+        {
+            return HardcoverProgressSyncResult.SkippedResult(bookId, RereadSyncPaused);
+        }
         if (!book.HardcoverBookId.HasValue)
         {
             if (book.HardcoverAutoMatchDisabled)
@@ -348,7 +353,8 @@ public sealed class HardcoverService : IHardcoverService
             return new HardcoverSyncAllResult(Array.Empty<HardcoverProgressSyncResult>(), "Synced 0 of 0 books.");
         }
 
-        var preFailures = new Dictionary<int, HardcoverProgressSyncResult>();
+        var preFailures = books.Where(book => book.IsRereading).ToDictionary(book => book.BookId,
+            book => HardcoverProgressSyncResult.SkippedResult(book.BookId, RereadSyncPaused));
         var claimedHardcoverBookIds = books
             .Where(b => b.HardcoverBookId.HasValue)
             .Select(b => b.HardcoverBookId!.Value)
@@ -356,7 +362,7 @@ public sealed class HardcoverService : IHardcoverService
 
         // 1. Batch-fetch missing metadata for already-matched books (chunks of 50).
         var matchedNeedingMeta = books
-            .Where(b => b.HardcoverBookId.HasValue && HasMissingMetadata(b))
+            .Where(b => !b.IsRereading && b.HardcoverBookId.HasValue && HasMissingMetadata(b))
             .ToList();
 
         foreach (var chunk in matchedNeedingMeta.Chunk(MetadataBatchSize))
@@ -388,7 +394,7 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         // 2. Match unmatched books and fill their metadata from the returned candidate.
-        foreach (var book in books.Where(b => !b.HardcoverBookId.HasValue && !b.HardcoverAutoMatchDisabled))
+        foreach (var book in books.Where(b => !b.IsRereading && !b.HardcoverBookId.HasValue && !b.HardcoverAutoMatchDisabled))
         {
             try
             {

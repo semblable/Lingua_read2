@@ -658,6 +658,203 @@ public class CompleteLessonTests
 
     // --- Helpers ---
 
+    [Fact]
+    public async Task UndoBookFinish_RestoresTheSectionsAndKeepsEarnedCredit()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var controller = CreateController(context, userId);
+        Assert.IsType<BookStatsDto>((await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId })).Value);
+        var previousLastRead = (await context.Books.AsNoTracking().SingleAsync()).LastReadAt;
+        var previousCompletion = (await context.Texts.AsNoTracking().SingleAsync(t => t.TextId == firstTextId)).LastCompletedAt;
+
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest { Rating = 4.5m }));
+        var finishedAt = (await controller.GetBook(bookId)).Value!.UndoFinishAt;
+        Assert.NotNull(finishedAt);
+        Assert.IsType<NoContentResult>(await controller.UndoBookFinish(bookId, new() { FinishedAt = finishedAt.Value }));
+
+        var book = await context.Books.AsNoTracking().SingleAsync();
+        var sections = await context.Texts.AsNoTracking().OrderBy(t => t.PartNumber).ToListAsync();
+        Assert.False(book.IsFinished);
+        Assert.Equal(firstTextId, book.LastReadTextId);
+        Assert.Equal(previousLastRead, book.LastReadAt);
+        Assert.Null(book.HardcoverPendingRating);
+        Assert.Null(book.FinishUndoJson);
+        Assert.True(sections[0].IsFinished);
+        Assert.Equal(previousCompletion, sections[0].LastCompletedAt);
+        Assert.False(sections[1].IsFinished);
+        Assert.Null(sections[1].LastCompletedAt);
+        Assert.Equal(1, await context.LessonStudyEvents.CountAsync());
+        Assert.Equal(3, (await context.UserLanguageStatistics.SingleAsync()).TotalWordsRead);
+    }
+
+    [Fact]
+    public async Task UndoBookFinish_DoesNotUndoANewerFinishFromAStaleDialogOrRetry()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var controller = CreateController(context, userId);
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest { Rating = 4m }));
+        var firstFinish = (await controller.GetBook(bookId)).Value!.UndoFinishAt!.Value;
+        var undo = new UndoBookFinishRequest { FinishedAt = firstFinish };
+        Assert.IsType<NoContentResult>(await controller.UndoBookFinish(bookId, undo));
+        Assert.IsType<NoContentResult>(await controller.UndoBookFinish(bookId, undo));
+
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest { Rating = 5m }));
+        Assert.IsType<ConflictObjectResult>(await controller.UndoBookFinish(bookId, undo));
+
+        var book = await context.Books.AsNoTracking().SingleAsync();
+        Assert.True(book.IsFinished);
+        Assert.Equal(5m, book.HardcoverPendingRating);
+        Assert.Equal(2, await context.Texts.CountAsync(text => text.IsFinished));
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("TextCompleted", false)]
+    [InlineData("BookFinished", false)]
+    [InlineData(null, true)]
+    public async Task UndoBookFinish_RecognizesOnlyLegacyFinishesWithSufficientEvidence(string? activityType, bool predatesStudyHistory)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var book = await context.Books.SingleAsync();
+        var sections = await context.Texts.OrderBy(t => t.PartNumber).ToListAsync();
+        var finishedAt = predatesStudyHistory ? new DateTime(2026, 4, 29, 17, 0, 0, DateTimeKind.Utc)
+            : DateTime.UtcNow.AddMinutes(-10);
+        book.LastReadAt = finishedAt;
+        book.IsFinished = true;
+        sections[0].IsFinished = true;
+        sections[0].LastCompletedAt = finishedAt.AddHours(-1);
+        sections[1].IsFinished = true;
+        sections[1].LastCompletedAt = finishedAt;
+        if (activityType != null)
+        {
+            context.UserActivities.Add(new UserActivity
+            {
+                UserId = userId, LanguageId = 1, ActivityType = activityType, Timestamp = finishedAt
+            });
+        }
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var canUndo = activityType == null && !predatesStudyHistory;
+        Assert.Equal(canUndo ? finishedAt : (DateTime?)null, (await controller.GetBook(bookId)).Value!.UndoFinishAt);
+        var result = await controller.UndoBookFinish(bookId, new() { FinishedAt = finishedAt });
+
+        if (canUndo)
+            Assert.IsType<NoContentResult>(result);
+        else
+            Assert.IsType<ConflictObjectResult>(result);
+
+        var saved = await context.Texts.AsNoTracking().OrderBy(t => t.PartNumber).ToListAsync();
+        Assert.True(saved[0].IsFinished);
+        Assert.Equal(!canUndo, saved[1].IsFinished);
+    }
+
+    [Fact]
+    public async Task StartBookReread_ResetsCurrentProgressAndCountsNewPassesWithoutDuplicatingUniqueCredit()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        await using var context = new AppDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var controller = CreateController(context, userId);
+        var secondTextId = await context.Texts.Where(t => t.PartNumber == 2).Select(t => t.TextId).SingleAsync();
+        Assert.IsType<BookStatsDto>((await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId })).Value);
+        Assert.True((await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId })).Value!.IsFinished);
+
+        var startedAt = Assert.IsType<DateTime>(Assert.IsType<OkObjectResult>((await controller.StartBookReread(bookId)).Result).Value);
+        var startedAgain = Assert.IsType<OkObjectResult>((await controller.StartBookReread(bookId)).Result);
+        Assert.Equal(startedAt, Assert.IsType<DateTime>(startedAgain.Value));
+        var book = (await controller.GetBook(bookId)).Value!;
+        Assert.False(book.IsFinished);
+        Assert.Null(book.LastReadTextId);
+        Assert.All(book.Parts, part => Assert.False(part.IsFinished));
+        Assert.Equal(0, Assert.Single((await controller.GetBooks()).Value!).FinishedPartCount);
+        Assert.Equal(2, await context.Texts.CountAsync(text => text.IsFinished));
+
+        await controller.UpdateLastRead(bookId, new UpdateLastReadDto
+        {
+            TextId = secondTextId, ClientUpdatedAt = startedAt.AddMinutes(-1)
+        });
+        Assert.Null((await controller.GetBook(bookId)).Value!.LastReadTextId);
+
+        // Finishing immediately on a new pass is independent of the previous pass's retry window.
+        var firstAgain = await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.Equal(50.0, firstAgain.Value!.CompletionPercentage);
+        Assert.False(firstAgain.Value.IsFinished);
+        Assert.Equal(1, Assert.Single((await controller.GetBooks()).Value!).FinishedPartCount);
+
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, null));
+        var finishedAt = (await controller.GetBook(bookId)).Value!.UndoFinishAt!.Value;
+        Assert.IsType<NoContentResult>(await controller.UndoBookFinish(bookId, new() { FinishedAt = finishedAt }));
+        var reopened = (await controller.GetBook(bookId)).Value!;
+        Assert.False(reopened.IsFinished);
+        Assert.True(reopened.Parts[0].IsFinished);
+        Assert.False(reopened.Parts[1].IsFinished);
+        Assert.Equal(2, await context.Texts.CountAsync(text => text.IsFinished));
+
+        Assert.True((await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId })).Value!.IsFinished);
+        var statistics = await context.UserLanguageStatistics.SingleAsync();
+        Assert.Equal(2, statistics.TotalTextsCompleted);
+        Assert.Equal(4, statistics.TotalTextCompletions);
+        Assert.Equal(8, statistics.TotalWordsRead);
+    }
+
+    [Fact]
+    public async Task Reread_ResetsSentenceCursorAndRejectsOlderOfflinePositions()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var controller = CreateController(context, userId);
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, null));
+        var oldCursorAt = DateTime.UtcNow.AddHours(-1);
+        context.UserSentenceProgresses.Add(new UserSentenceProgress
+        {
+            UserId = userId,
+            TextId = firstTextId,
+            LastSegmentIndex = 6,
+            UpdatedAt = oldCursorAt,
+            CreditedSegmentIndicesJson = "[6]",
+            CreditedWordCount = 2
+        });
+        await context.SaveChangesAsync();
+        Assert.IsType<OkObjectResult>((await controller.StartBookReread(bookId)).Result);
+        var activity = new UserActivityController(context, null!, NullLogger<UserActivityController>.Instance)
+        {
+            ControllerContext = controller.ControllerContext
+        };
+
+        var initial = Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>((await activity.GetSentenceProgress(firstTextId)).Result).Value);
+        Assert.Null(initial.LastSegmentIndex);
+        Assert.NotNull(initial.CursorResetAt);
+        Assert.Equal([6], initial.CreditedSegmentIndices);
+        Assert.Equal(2, initial.CreditedWordCount);
+
+        var olderReplay = await activity.LogSentenceRead(new UserActivityController.LogSentenceReadRequest
+        {
+            TextId = firstTextId, CurrentSegmentIndex = 7, ClientUpdatedAt = oldCursorAt.AddMinutes(10)
+        });
+        Assert.Null(Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>(olderReplay.Result).Value).LastSegmentIndex);
+
+        var rereading = await activity.LogSentenceRead(new UserActivityController.LogSentenceReadRequest
+        {
+            TextId = firstTextId, CurrentSegmentIndex = 1
+        });
+        Assert.Equal(1, Assert.IsType<UserActivityController.SentenceProgressDto>(
+            Assert.IsType<OkObjectResult>(rereading.Result).Value).LastSegmentIndex);
+    }
+
     private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null, HardcoverSyncChannel? hardcoverSyncChannel = null)
     {
         return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService, hardcoverSyncChannel: hardcoverSyncChannel)

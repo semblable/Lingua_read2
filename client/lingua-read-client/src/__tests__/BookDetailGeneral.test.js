@@ -1,11 +1,13 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import BookDetail from '../pages/BookDetail';
 import {
   getBook,
   finishBook,
+  undoBookFinish,
+  startBookReread,
   updateBook,
   deleteBook,
   getText,
@@ -21,6 +23,8 @@ import {
 vi.mock('../utils/api', () => ({
   getBook: vi.fn(),
   finishBook: vi.fn(),
+  undoBookFinish: vi.fn(),
+  startBookReread: vi.fn(),
   updateBook: vi.fn(),
   deleteBook: vi.fn(),
   getText: vi.fn(),
@@ -114,7 +118,8 @@ describe('BookDetail (general flows)', () => {
     renderBookDetail();
     await screen.findByText('Sample Book');
 
-    fireEvent.click(screen.getByRole('button', { name: /Edit Book/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByText('Edit Book'));
 
     const dialog = await screen.findByRole('dialog');
     const titleInput = dialog.querySelector('input[type="text"]');
@@ -124,6 +129,50 @@ describe('BookDetail (general flows)', () => {
     await waitFor(() => {
       expect(updateBook).toHaveBeenCalledWith(7, { title: 'Renamed Book' });
     });
+  });
+
+  test('undoes a manual finish from More and refreshes the book progress', async () => {
+    const finishedAt = '2026-11-21T11:00:00.123456Z';
+    getBook.mockResolvedValueOnce({
+      ...baseBook, isFinished: true, undoFinishAt: finishedAt, hardcoverBookId: 123
+    }).mockResolvedValueOnce({ ...baseBook, lastReadTextId: 1 });
+    undoBookFinish.mockResolvedValueOnce(undefined);
+    renderBookDetail();
+
+    await screen.findByText('Sample Book');
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByText('Undo finish'));
+    const dialog = await screen.findByRole('dialog', { name: 'Undo finish' });
+    expect(within(dialog).getByText(/status or rating already synced/i)).toBeVisible();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Undo finish' }));
+
+    expect(await screen.findByRole('button', { name: 'Continue Reading' })).toBeVisible();
+    expect(screen.getByText('Book progress restored.')).toBeVisible();
+    expect(undoBookFinish).toHaveBeenCalledWith('7', finishedAt);
+    expect(screen.queryByText('Completed')).not.toBeInTheDocument();
+  });
+
+  test('starts a completed book from the first section with a fresh reread pass', async () => {
+    const startedAt = '2026-11-21T12:00:00Z';
+    getBook.mockResolvedValueOnce({ ...baseBook, isFinished: true, lastReadTextId: 2 })
+      .mockResolvedValueOnce({
+        ...baseBook,
+        rereadStartedAt: startedAt,
+        parts: baseBook.parts.map(part => ({ ...part, isFinished: false }))
+      });
+    startBookReread.mockResolvedValueOnce(startedAt);
+    renderBookDetail();
+
+    await screen.findByText('Sample Book');
+    fireEvent.click(screen.getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByText('Start reread'));
+    const dialog = await screen.findByRole('dialog', { name: 'Start reread' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Start reread' }));
+
+    expect(await screen.findByText('Rereading')).toBeVisible();
+    expect(screen.getByText('0 of 2 finished')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Start Reading' })).toBeVisible();
+    expect(startBookReread).toHaveBeenCalledWith('7');
   });
 
   test('per-part delete calls deleteText after confirmation', async () => {

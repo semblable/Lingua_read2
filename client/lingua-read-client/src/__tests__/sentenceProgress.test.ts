@@ -7,7 +7,7 @@ import { getSentenceProgress, logSentenceReadActivity } from '../utils/api/audio
 import { fetchApi } from '../utils/api/client';
 import { productionSyncHandlers } from '../utils/offline/handlers';
 import { clearAll, drain, enqueue, listPending } from '../utils/offline/syncQueue';
-import { clearCachedSentenceProgress } from '../utils/sentenceProgress';
+import { clearCachedSentenceProgress, rememberSentenceProgress } from '../utils/sentenceProgress';
 
 const mockFetch = vi.mocked(fetchApi);
 
@@ -38,6 +38,33 @@ test('restores the most recent pending cursor and retains credits across an offl
     lastSegmentIndex: 1,
     cursorUpdatedAt: '2026-11-16T12:11:00Z',
     creditedSegmentIndices: [1, 4, 5]
+  });
+});
+
+test('a reread resets old cached and queued cursors while retaining sentence credit', async () => {
+  const textId = 12;
+  const cursorResetAt = '2026-11-21T12:00:00Z';
+  rememberSentenceProgress(textId, {
+    lastSegmentIndex: 4, cursorUpdatedAt: '2026-11-21T11:50:00Z', creditedSegmentIndices: [4]
+  });
+  await enqueue({ type: 'sentenceRead', payload: {
+    textId, currentSegmentIndex: 5, clientUpdatedAt: '2026-11-21T11:55:00Z',
+    segments: [{ segmentIndex: 5, segmentText: 'Five.' }]
+  } });
+
+  rememberSentenceProgress(textId, { cursorResetAt });
+  mockFetch.mockRejectedValueOnce(new TypeError('offline'));
+  await expect(getSentenceProgress(textId)).resolves.toMatchObject({
+    lastSegmentIndex: null, cursorResetAt, creditedSegmentIndices: [4, 5]
+  });
+
+  await enqueue({ type: 'sentenceRead', payload: {
+    textId, currentSegmentIndex: 1, clientUpdatedAt: '2026-11-21T12:01:00Z',
+    segments: [{ segmentIndex: 1, segmentText: 'One.' }]
+  } });
+  mockFetch.mockResolvedValueOnce({ textId, lastSegmentIndex: null, cursorResetAt, creditedSegmentIndices: [4] });
+  await expect(getSentenceProgress(textId)).resolves.toMatchObject({
+    lastSegmentIndex: 1, cursorResetAt, creditedSegmentIndices: [1, 4, 5]
   });
 });
 

@@ -58,9 +58,11 @@ namespace LinguaReadApi.Controllers
             // Rank unread items from current vocabulary without rewriting cached text or book stats.
             var texts = await (from t in _context.Texts
                 where t.UserId == userId && t.Tag != "srs-story"
+                let isFinishedThisPass = t.IsFinished && (t.Book == null || t.Book.RereadStartedAt == null ||
+                    t.LastCompletedAt >= t.Book.RereadStartedAt)
                 let useLiveCoverage = liveCoverage && (t.WordLinkingStatus == "completed"
                     || (t.WordLinkingStatus == null && t.TextWords.Any()))
-                    && !t.IsFinished && (t.Book == null || !t.Book.IsFinished)
+                    && !isFinishedThisPass && (t.Book == null || !t.Book.IsFinished)
                 let countableWords = t.TextWords.Where(link => link.Word.Status != 6)
                 orderby t.CreatedAt descending
                 select new TextDto
@@ -75,7 +77,7 @@ namespace LinguaReadApi.Controllers
                     BookTitle = t.Book != null ? t.Book.Title : null, // Include BookTitle
                     PartNumber = t.PartNumber,
                     BookIsFinished = t.Book != null && t.Book.IsFinished,
-                    IsFinished = t.IsFinished,
+                    IsFinished = isFinishedThisPass,
                     FolderId = t.FolderId,
                     SortOrder = t.SortOrder,
                     TotalWords = useLiveCoverage ? countableWords.Sum(link => link.OccurrenceCount) : t.TotalWords,
@@ -269,6 +271,7 @@ namespace LinguaReadApi.Controllers
             var candidates = _context.Texts.AsNoTracking()
                 .Where(t => t.UserId == userId
                          && t.LastAccessedAt != null
+                         && (t.Book == null || t.Book.RereadStartedAt == null || t.LastAccessedAt >= t.Book.RereadStartedAt)
                          && t.Tag != "srs-story");
             // Exclude older parts in SQL before limiting metadata to five rows.
             // TextId breaks recency ties consistently within and between books.
@@ -292,7 +295,8 @@ namespace LinguaReadApi.Controllers
                     TotalWords = t.TotalWords,
                     KnownWords = t.KnownWords,
                     CoverImagePath = t.Book != null ? t.Book.CoverImagePath : t.ImagePath,
-                    IsFinished = t.IsFinished
+                    IsFinished = t.IsFinished && (t.Book == null || t.Book.RereadStartedAt == null ||
+                        t.LastCompletedAt >= t.Book.RereadStartedAt)
                 })
                 .ToListAsync();
 

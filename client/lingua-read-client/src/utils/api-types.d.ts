@@ -1120,6 +1120,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Books/{id}/undo-finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["UndoBookFinishRequest"];
+                    "text/json": components["schemas"]["UndoBookFinishRequest"];
+                    "application/*+json": components["schemas"]["UndoBookFinishRequest"];
+                };
+            };
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/Books/{id}/reread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                        "application/json": string;
+                        "text/json": string;
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ProblemDetails"];
+                        "application/json": components["schemas"]["ProblemDetails"];
+                        "text/json": components["schemas"]["ProblemDetails"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Books/{id}/next-lesson": {
         parameters: {
             query?: never;
@@ -5977,6 +6101,15 @@ export interface components {
             hardcoverMatchedAt?: string | null;
             /** Format: date-time */
             hardcoverLastSyncedAt?: string | null;
+            hardcoverAutoMatchDisabled?: boolean;
+            /** Format: double */
+            hardcoverPendingRating?: number | null;
+            /** Format: uuid */
+            hardcoverPendingRatingId?: string | null;
+            /** Format: int32 */
+            hardcoverPendingRatingBookId?: number | null;
+            /** Format: int32 */
+            hardcoverPendingFinishAfterReadId?: number | null;
             /** Format: date-time */
             createdAt?: string;
             /** Format: int32 */
@@ -5990,6 +6123,8 @@ export interface components {
             /** Format: date-time */
             lastReadAt?: string | null;
             isFinished?: boolean;
+            /** Format: date-time */
+            rereadStartedAt?: string | null;
             /** Format: date-time */
             statsUpdatedAt?: string | null;
             readTextIds?: number[] | null;
@@ -6053,6 +6188,10 @@ export interface components {
             /** Format: date-time */
             statsUpdatedAt?: string | null;
             isFinished?: boolean;
+            /** Format: date-time */
+            rereadStartedAt?: string | null;
+            /** Format: date-time */
+            undoFinishAt?: string | null;
             /** Format: int32 */
             readonly unknownWords?: number;
             /** Format: double */
@@ -7007,6 +7146,8 @@ export interface components {
             /** Format: date-time */
             cursorUpdatedAt?: string | null;
             /** Format: date-time */
+            cursorResetAt?: string | null;
+            /** Format: date-time */
             serverTime?: string;
             sourceCoverage?: components["schemas"]["SentenceSourceCoverage"];
         };
@@ -7519,6 +7660,10 @@ export interface components {
             translatedText?: string | null;
             sourceLanguageCode?: string | null;
             targetLanguageCode?: string | null;
+        };
+        UndoBookFinishRequest: {
+            /** Format: date-time */
+            finishedAt: string;
         };
         UpdateAudioLessonProgressRequest: {
             /** Format: int32 */

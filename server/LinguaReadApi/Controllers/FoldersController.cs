@@ -135,7 +135,8 @@ namespace LinguaReadApi.Controllers
                     LanguageName = b.Language.Name,
                     CreatedAt = b.CreatedAt,
                     PartCount = b.Texts.Count,
-                    FinishedPartCount = b.Texts.Count(t => t.IsFinished),
+                    FinishedPartCount = b.Texts.Count(t => t.IsFinished &&
+                        (b.RereadStartedAt == null || t.LastCompletedAt >= b.RereadStartedAt)),
                     LastReadTextId = b.LastReadTextId,
                     LastReadAt = b.LastReadAt,
                     TotalWords = b.TotalWords,

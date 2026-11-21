@@ -75,6 +75,9 @@ namespace LinguaReadApi.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)");
 
+                    b.Property<string>("FinishUndoJson")
+                        .HasColumnType("text");
+
                     b.Property<int?>("FolderId")
                         .HasColumnType("integer");
 
@@ -149,6 +152,9 @@ namespace LinguaReadApi.Data.Migrations
                         .HasColumnType("character varying(200)");
 
                     b.Property<DateTime?>("ReleaseDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("RereadStartedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("SortOrder")

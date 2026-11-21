@@ -2468,7 +2468,10 @@ const TextDisplay = () => {
     try {
       // Call the correct API endpoint using the imported completeLesson function
       // Pass bookId if available, otherwise null/undefined (handled by completeLesson in api.js)
-      const textStats = await completeLesson(text?.bookId ?? null, text.textId, false, { sourceRevision: text.studyRevision });
+      const textStats = await completeLesson(text?.bookId ?? null, text.textId, false, {
+        sourceRevision: text.studyRevision,
+        ...(book?.rereadStartedAt ? { rereadStartedAt: book.rereadStartedAt } : {})
+      });
       // If standalone text, always go back to its Library folder after completion
       if (!text?.bookId) {
         navigate(libraryPath(text?.folderId));
@@ -2646,7 +2649,7 @@ const TextDisplay = () => {
   // Offline audio downloads are paused until caching is fixed.
   const studyControls = text?.textId ? (
     <LessonStudyPanel textId={text.textId} bookId={text.bookId} sourceRevision={text.studyRevision}
-      hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
+      rereadStartedAt={book?.rereadStartedAt} hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
   ) : null;
   const pendingWordCount = wordStatusStates.filter(state => state.pending).length;
   const queuedWordCount = wordStatusStates.filter(state => state.queuedOffline && !state.pending).length;

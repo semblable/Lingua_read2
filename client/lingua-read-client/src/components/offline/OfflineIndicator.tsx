@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Badge, Button, Form, Modal } from 'react-bootstrap';
-import { authLogin } from '../../utils/api/auth';
+import { authLogin, ensureLoginSucceeded, LoginError } from '../../utils/api/auth';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { WORD_STATUS_LABELS, type WordStatus } from '../../types/wordStatus';
 import { drain, pending, listWordConflicts, resolveWordConflict, type SyncHandlers, type WordConflict } from '../../utils/offline/syncQueue';
@@ -26,6 +26,8 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
   const [authRequired, setAuthRequired] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [password, setPassword] = useState('');
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryToken, setRecoveryToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [signingIn, setSigningIn] = useState(false);
   const [retryAt, setRetryAt] = useState(0);
@@ -47,6 +49,8 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
     const stopRestored = subscribeOfflineEvent('auth-restored', () => {
       authRequiredRef.current = false;
       setAuthRequired(false);
+      setRecoveryAvailable(false);
+      setRecoveryToken('');
       setShowLogin(false);
     });
     const stopSession = subscribeOfflineEvent('session-ended', () => {
@@ -112,8 +116,9 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
     setSigningIn(true);
     setLoginError('');
     try {
-      const response = await authLogin(password);
-      if (!response.ok) throw new Error((await response.json()).message || 'Sign in failed.');
+      const token = recoveryToken.trim();
+      const response = await (token ? authLogin(password, token) : authLogin(password));
+      await ensureLoginSucceeded(response, 'Sign in failed.');
       setPassword('');
       notifyOfflineEvent('auth-restored');
       setAuthRequired(false);
@@ -121,6 +126,10 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
       nextAttemptAt.current = 0;
       await handleDrainNow();
     } catch (error) {
+      if (error instanceof LoginError && error.recoveryAvailable !== undefined) {
+        setRecoveryAvailable(error.recoveryAvailable);
+        if (!error.recoveryAvailable) setRecoveryToken('');
+      }
       setLoginError(error instanceof Error ? error.message : 'Sign in failed.');
     } finally { setSigningIn(false); }
   };
@@ -210,7 +219,7 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
         ))}
       </Modal.Body>
     </Modal>
-    <Modal show={showLogin} onHide={() => setShowLogin(false)}>
+    <Modal show={showLogin} onHide={() => { setRecoveryToken(''); setShowLogin(false); }}>
       <Modal.Header closeButton><Modal.Title>Sign in to sync</Modal.Title></Modal.Header>
       <Form onSubmit={signIn}>
         <Modal.Body>
@@ -220,6 +229,11 @@ const OfflineIndicator: React.FC<OfflineIndicatorProps> = ({
             <Form.Control type="password" autoComplete="current-password" required value={password}
               onChange={event => setPassword(event.target.value)} />
           </Form.Group>
+          {recoveryAvailable && <Form.Group className="mt-3" controlId="sync-recovery-token">
+            <Form.Label>Owner recovery code (optional)</Form.Label>
+            <Form.Control type="password" autoComplete="off" value={recoveryToken}
+              onChange={event => setRecoveryToken(event.target.value)} />
+          </Form.Group>}
         </Modal.Body>
         <Modal.Footer><Button type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Sign in'}</Button></Modal.Footer>
       </Form>

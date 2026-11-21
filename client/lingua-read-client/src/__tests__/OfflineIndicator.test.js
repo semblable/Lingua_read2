@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import OfflineIndicator from '../components/offline/OfflineIndicator';
 import { enqueue, drain, clearAll, listWordConflicts } from '../utils/offline/syncQueue';
 import { authLogin } from '../utils/api/auth';
-vi.mock('../utils/api/auth', () => ({ authLogin: vi.fn() }));
+vi.mock('../utils/api/auth', async importOriginal => ({ ...await importOriginal(), authLogin: vi.fn() }));
 
 const setOnline = (value) => {
   Object.defineProperty(window.navigator, 'onLine', {
@@ -78,6 +78,25 @@ describe('OfflineIndicator', () => {
     await waitFor(() => expect(review).toHaveBeenCalledTimes(2));
     expect(authLogin).toHaveBeenCalledWith('secret');
     expect(screen.getByLabelText('Reader note')).toHaveValue('unsaved note');
+  });
+
+  test('accepts an owner recovery code in the sync dialog during lockout', async () => {
+    await enqueue({ type: 'srsReview', payload: { cardId: 9, grade: 2 } });
+    const review = vi.fn().mockRejectedValueOnce({ status: 401 }).mockResolvedValue(undefined);
+    authLogin.mockResolvedValueOnce(new Response(JSON.stringify({
+      message: 'Sign-in is temporarily locked.', recoveryAvailable: true,
+    }), { status: 401 })).mockResolvedValueOnce(new Response('{}'));
+    render(<OfflineIndicator handlers={{ ...noopHandlers, srsReview: review }} />);
+    fireEvent.click(await screen.findByTestId('offline-indicator'));
+    await screen.findByRole('dialog');
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'owner-password' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    fireEvent.change(await screen.findByLabelText(/owner recovery code/i), { target: { value: 'owner-code' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    await waitFor(() => expect(review).toHaveBeenCalledTimes(2));
+    expect(authLogin).toHaveBeenLastCalledWith('owner-password', 'owner-code');
   });
   beforeEach(async () => {
     setOnline(true);

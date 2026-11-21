@@ -27,7 +27,7 @@ export const authStatus = async (): Promise<AuthStatus> => {
   return res.json();
 };
 
-export const authLogin = (password: string): Promise<Response> => {
+export const authLogin = (password: string, recoveryToken?: string): Promise<Response> => {
   return fetch(API_URL + '/auth/login', {
     method: 'POST',
     credentials: 'include',
@@ -35,9 +35,22 @@ export const authLogin = (password: string): Promise<Response> => {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest'
     },
-    body: JSON.stringify({ password })
+    body: JSON.stringify({ password, recoveryToken })
   });
 };
+
+export class LoginError extends Error {
+  constructor(message: string, readonly recoveryAvailable?: boolean) {
+    super(message);
+  }
+}
+
+export async function ensureLoginSucceeded(response: Response, fallbackMessage: string): Promise<void> {
+  if (response.ok) return;
+  const data: { message?: unknown; recoveryAvailable?: unknown } | null = await response.json().catch(() => null);
+  const message = typeof data?.message === 'string' && data.message ? data.message : fallbackMessage;
+  throw new LoginError(message, response.status === 401 ? data?.recoveryAvailable === true : undefined);
+}
 
 export const authLogout = (): Promise<Response> => {
   return fetch(API_URL + '/auth/logout', {

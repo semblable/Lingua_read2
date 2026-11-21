@@ -6414,6 +6414,7 @@ export interface components {
         };
         LoginRequest: {
             password?: string | null;
+            recoveryToken?: string | null;
         };
         MoveItemsDto: {
             textIds?: number[] | null;

@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Login from '../pages/Login';
 import { useAuthStore } from '../utils/store';
+import { LoginError } from '../utils/api/auth';
 
 // Mock the store's login action
 const mockLogin = vi.fn();
@@ -24,6 +25,7 @@ describe('Login', () => {
   test('renders password input and submit button', () => {
     renderLogin();
     expect(screen.getByPlaceholderText('Enter your password')).toBeInTheDocument();
+    expect(screen.queryByLabelText(/owner recovery code/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
   });
 
@@ -49,6 +51,23 @@ describe('Login', () => {
     fireEvent.click(screen.getByRole('button', { name: /log in/i }));
 
     await waitFor(() => expect(screen.getByText('Invalid password.')).toBeInTheDocument());
+  });
+
+  test('offers optional owner recovery after the server reports an active lockout', async () => {
+    mockLogin.mockRejectedValueOnce(new LoginError('Sign-in is temporarily locked.', true));
+    mockLogin.mockResolvedValueOnce(undefined);
+    renderLogin();
+
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'owner-password' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    const recovery = await screen.findByLabelText(/owner recovery code/i);
+    expect(recovery).not.toBeRequired();
+    fireEvent.change(recovery, { target: { value: 'owner-code' } });
+    fireEvent.click(screen.getByRole('button', { name: /log in/i }));
+
+    await waitFor(() => expect(mockLogin).toHaveBeenLastCalledWith('owner-password', 'owner-code'));
+    expect(screen.queryByLabelText(/owner recovery code/i)).not.toBeInTheDocument();
   });
 
   test('shows loading state during login', async () => {

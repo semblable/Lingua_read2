@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { authStatus, authLogin, authLogout, authSetup } from './api';
-import type { AuthUser } from './api/auth';
+import { ensureLoginSucceeded, type AuthUser } from './api/auth';
 import { clearOfflineState } from './offline/cleanup';
 
 // --- Auth Store ---
@@ -13,7 +13,7 @@ export type AuthState = {
   localMode: boolean;
   logoutWarning: string | null;
   checkAuth: () => Promise<void>;
-  login: (password: string) => Promise<void>;
+  login: (password: string, recoveryToken?: string) => Promise<void>;
   logout: () => Promise<void>;
   setup: (password: string, setupToken?: string) => Promise<void>;
 };
@@ -40,12 +40,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       set({ isAuthenticated: false, user: null, isLoading: false, needsSetup: false, localMode: false });
     }
   },
-  login: async (password) => {
-    const res = await authLogin(password);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.message || 'Login failed.');
-    }
+  login: async (...credentials) => {
+    await ensureLoginSucceeded(await authLogin(...credentials), 'Login failed.');
     // After successful login, re-check auth status to get user info
     const status = await authStatus();
     set({

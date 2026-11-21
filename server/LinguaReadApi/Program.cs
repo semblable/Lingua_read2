@@ -633,6 +633,15 @@ app.Use(async (context, next) =>
 
 app.MapControllers();
 
+// Nginx forwards a bodyless POST through the usual authorization and CSRF gates
+// before buffering large uploads. The upload endpoints validate the full request.
+var uploadAuthorization = app.MapGroup("/api/internal/upload")
+    .ExcludeFromDescription()
+    .RequireAuthorization();
+uploadAuthorization.MapPost("/session", () => Results.NoContent());
+uploadAuthorization.MapPost("/admin", () => Results.NoContent())
+    .RequireAuthorization(AdminOnlyRequirement.PolicyName);
+
 // Configure Kestrel to use port 5000.
 // Wrapped in try/catch so design-time tooling that runs the assembly without
 // a live server (e.g. Swashbuckle.AspNetCore.Cli's `dotnet swagger tofile`,

@@ -136,6 +136,76 @@ public class LocalModeTests
         Assert.Null((await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.FindAsync(LocalMode.OwnerId))!.PasswordHash);
     }
 
+    [Theory]
+    [InlineData("/api/internal/upload/session")]
+    [InlineData("/api/internal/upload/admin")]
+    public async Task UploadAuthorization_AcceptsCookieAndBearerSessions(string path)
+    {
+        using var factory = Factory(local: false, password: true);
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsync(path, null)).StatusCode);
+
+        using var login = await client.PostAsJsonAsync("/api/auth/login", new { password = Password });
+        Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        var cookie = login.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
+        using var incompleteCookieRequest = new HttpRequestMessage(HttpMethod.Post, path);
+        incompleteCookieRequest.Headers.Add("Cookie", cookie);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.SendAsync(incompleteCookieRequest)).StatusCode);
+
+        using var cookieRequest = new HttpRequestMessage(HttpMethod.Post, path);
+        cookieRequest.Headers.Add("Cookie", cookie);
+        cookieRequest.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(cookieRequest)).StatusCode);
+
+        using var bearerRequest = new HttpRequestMessage(HttpMethod.Post, path);
+        bearerRequest.Headers.Authorization = new("Bearer", cookie[(cookie.IndexOf('=') + 1)..]);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(bearerRequest)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("/api/internal/upload/session")]
+    [InlineData("/api/internal/upload/admin")]
+    public async Task UploadAuthorization_AcceptsTheOwnerThroughATrustedLocalProxy(string path)
+    {
+        using var factory = Factory(proxy: true, peer: "172.20.0.5");
+        using var client = factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+        request.Headers.Add("X-Forwarded-For", "127.0.0.1");
+        request.Headers.Add("X-Forwarded-Proto", "http");
+        request.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        using var result = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.NoContent, result.StatusCode);
+        Assert.False(result.Headers.Contains("Set-Cookie"));
+    }
+
+    [Fact]
+    public async Task UploadAuthorization_UsesTheConfiguredCorsPolicy()
+    {
+        const string allowedOrigin = "https://upload-client.example.test";
+        using var factory = Factory(local: false, allowedOrigin: allowedOrigin);
+        using var client = factory.CreateClient();
+        using var preflight = new HttpRequestMessage(HttpMethod.Options, "/api/texts/audio");
+        preflight.Headers.Add("Origin", allowedOrigin);
+        preflight.Headers.Add("Access-Control-Request-Method", "POST");
+        preflight.Headers.Add("Access-Control-Request-Headers", "X-Requested-With");
+        using var preflightResult = await client.SendAsync(preflight);
+        Assert.Equal(HttpStatusCode.NoContent, preflightResult.StatusCode);
+        Assert.Equal(allowedOrigin, preflightResult.Headers.GetValues("Access-Control-Allow-Origin").Single());
+
+        using var upstreamCheck = new HttpRequestMessage(HttpMethod.Post, "/api/internal/upload/session");
+        upstreamCheck.Headers.Add("Origin", allowedOrigin);
+        using var upstreamResult = await client.SendAsync(upstreamCheck);
+        Assert.Equal(HttpStatusCode.Unauthorized, upstreamResult.StatusCode);
+        Assert.Equal(allowedOrigin, upstreamResult.Headers.GetValues("Access-Control-Allow-Origin").Single());
+        Assert.Equal("true", upstreamResult.Headers.GetValues("Access-Control-Allow-Credentials").Single());
+
+        using var otherCheck = new HttpRequestMessage(HttpMethod.Post, "/api/internal/upload/session");
+        otherCheck.Headers.Add("Origin", "https://different.example.test");
+        using var otherResult = await client.SendAsync(otherCheck);
+        Assert.Equal(HttpStatusCode.Unauthorized, otherResult.StatusCode);
+        Assert.False(otherResult.Headers.Contains("Access-Control-Allow-Origin"));
+    }
+
     [Fact]
     public async Task LocalPipeline_RejectsUnsafeNoCookieRequests_AndDoesNotChangeExistingCredentials()
     {
@@ -225,7 +295,7 @@ public class LocalModeTests
     }).Build();
 
     private static WebApplicationFactory<Program> Factory(bool local = true, bool proxy = false,
-        string peer = "127.0.0.1", bool password = false, bool seedOwner = true)
+        string peer = "127.0.0.1", bool password = false, bool seedOwner = true, string? allowedOrigin = null)
     {
         var dbName = Guid.NewGuid().ToString();
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder => {
@@ -233,6 +303,7 @@ public class LocalModeTests
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?> {
                 ["Auth:LocalMode"] = local.ToString(), ["Auth:LocalProxy"] = proxy.ToString(),
                 ["ReverseProxy:KnownNetworks:0"] = "172.20.0.0/16",
+                ["Cors:AllowedOrigins"] = allowedOrigin,
                 ["Jwt:Key"] = local ? "" : "synthetic-normal-auth-fixture-key-at-least32bytes",
                 ["Jwt:Issuer"] = "fixture", ["Jwt:Audience"] = "fixture",
                 ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=unused"

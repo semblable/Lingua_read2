@@ -40,8 +40,76 @@ public class AuthControllerTests
     private static readonly Guid DefaultUserId = new("a1a1a1a1-b2b2-c3c3-d4d4-e5e5e5e5e5e5");
     private const string TestPassword = "SecurePass123";
     private const string TestJwtKey = "this-is-a-test-jwt-key-that-is-at-least-32-bytes-long-for-hmac-sha256!!";
+    private const string TestRecoveryToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private const string OtherRecoveryToken = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
     // --- Login Tests ---
+
+    [Theory]
+    [InlineData(null, TestRecoveryToken, false)]
+    [InlineData("misconfigured", TestRecoveryToken, false)]
+    [InlineData(TestRecoveryToken, null, true)]
+    [InlineData(TestRecoveryToken, OtherRecoveryToken, true)]
+    public async Task Login_LockedWithMissingOrInvalidRecoveryProof_SkipsPasswordVerification(
+        string? configuredToken, string? submittedToken, bool offeredRecovery)
+    {
+        await using var context = CreateContext();
+        var user = SeedDefaultUser(context, "stored-hash");
+        user.LockoutEnd = DateTimeOffset.UtcNow.AddMinutes(15);
+        user.AccessFailedCount = 5;
+        await context.SaveChangesAsync();
+        var lockoutEnd = user.LockoutEnd;
+        var hasher = new Mock<IPasswordHasher<User>>(MockBehavior.Strict);
+        var controller = CreateController(context, passwordHasher: hasher.Object, recoveryToken: configuredToken);
+
+        var result = Assert.IsType<UnauthorizedObjectResult>(await controller.Login(new LoginRequest
+        {
+            Password = TestPassword,
+            RecoveryToken = submittedToken
+        }));
+
+        Assert.Equal(offeredRecovery, GetProperty<bool>(result.Value!, "recoveryAvailable"));
+        Assert.False(controller.Response.Headers.ContainsKey("Set-Cookie"));
+        var persistedUser = await context.Users.AsNoTracking().SingleAsync(u => u.Id == DefaultUserId);
+        Assert.Equal(lockoutEnd, persistedUser.LockoutEnd);
+        Assert.Equal(5, persistedUser.AccessFailedCount);
+        hasher.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(TestPassword, true)]
+    [InlineData("incorrect-password", false)]
+    public async Task Login_LockedWithRecoveryProof_RequiresPassword(string password, bool succeeds)
+    {
+        await using var context = CreateContext();
+        var user = SeedDefaultUser(context);
+        user.PasswordHash = new PasswordHasher<User>().HashPassword(user, TestPassword);
+        user.LockoutEnd = DateTimeOffset.UtcNow.AddMinutes(15);
+        user.AccessFailedCount = 5;
+        user.SecurityStamp = "existing-session-stamp";
+        await context.SaveChangesAsync();
+        var lockoutEnd = user.LockoutEnd;
+        var controller = CreateController(context, recoveryToken: TestRecoveryToken);
+
+        var result = await controller.Login(new LoginRequest { Password = password, RecoveryToken = TestRecoveryToken.ToUpperInvariant() });
+        var persistedUser = await context.Users.AsNoTracking().SingleAsync(u => u.Id == DefaultUserId);
+
+        if (succeeds)
+        {
+            Assert.IsType<OkObjectResult>(result);
+            Assert.Contains(".LinguaRead.Auth=", controller.Response.Headers.SetCookie.ToString());
+            Assert.Null(persistedUser.LockoutEnd);
+            Assert.Equal(0, persistedUser.AccessFailedCount);
+            Assert.Equal("existing-session-stamp", persistedUser.SecurityStamp);
+        }
+        else
+        {
+            Assert.IsType<UnauthorizedObjectResult>(result);
+            Assert.False(controller.Response.Headers.ContainsKey("Set-Cookie"));
+            Assert.Equal(lockoutEnd, persistedUser.LockoutEnd);
+            Assert.Equal(5, persistedUser.AccessFailedCount);
+        }
+    }
 
     [Fact]
     public async Task Login_EmptyPassword_ReturnsBadRequest()
@@ -332,7 +400,8 @@ public class AuthControllerTests
         AppDbContext context,
         DefaultHttpContext? httpContext = null,
         ClaimsPrincipal? principal = null,
-        IPasswordHasher<User>? passwordHasher = null)
+        IPasswordHasher<User>? passwordHasher = null,
+        string? recoveryToken = null)
     {
         httpContext ??= new DefaultHttpContext();
         if (principal != null)
@@ -346,7 +415,8 @@ public class AuthControllerTests
                 ["Jwt:Key"] = TestJwtKey,
                 ["Jwt:Issuer"] = "LinguaReadTest",
                 ["Jwt:Audience"] = "LinguaReadTestAudience",
-                ["Jwt:ExpiryInHours"] = "1"
+                ["Jwt:ExpiryInHours"] = "1",
+                ["Auth:RecoveryToken"] = recoveryToken
             })
             .Build();
 

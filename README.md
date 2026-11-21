@@ -115,6 +115,12 @@ Alternatively, configure a random
 with your chosen password. Outside Development, setup requires this token.
 Remove the token after setup; keep the initial connection trusted and local.
 
+For optional lockout recovery, set `LINGUAREAD_RECOVERY_TOKEN` to a 64-character
+hex code generated with `openssl rand -hex 32` or PowerShell 7
+`[Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))`.
+Save the code securely. During an account lockout, use the code with your
+password in the sign-in form.
+
 ```sh
 docker compose up --build -d
 docker compose ps

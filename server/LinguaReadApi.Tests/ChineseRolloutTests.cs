@@ -20,6 +20,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Migrations.Operations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Npgsql;
 using Xunit;
 
@@ -816,6 +817,68 @@ public class ChineseRolloutTests
         var links = await h.Context.TextWords.Where(tw => tw.TextId == retryId).Include(tw => tw.Word).ToListAsync();
         Assert.Equal(new[] { "我", "爱", "读书" }.OrderBy(x => x), links.Select(l => l.Word.Term).OrderBy(x => x));
         Assert.All(links, l => Assert.Equal(1, l.OccurrenceCount));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InterruptedAudioCopy_CleansUpPartialFile_AndPreservesOtherAudio(bool batch)
+    {
+        await using var h = await Harness.Create();
+        var audioDirectory = Path.Combine(h.WebRoot, "audio_lessons", h.UserId.ToString());
+        Directory.CreateDirectory(audioDirectory);
+        var existingAudioPath = Path.Combine(audioDirectory, "existing.mp3");
+        byte[] existingAudio = [1, 2, 3];
+        await File.WriteAllBytesAsync(existingAudioPath, existingAudio);
+
+        var interruptedAudio = new Mock<IFormFile>();
+        interruptedAudio.SetupGet(file => file.FileName).Returns(@"C:\fakepath\interrupted.mp3");
+        interruptedAudio.SetupGet(file => file.ContentType).Returns("audio/mpeg");
+        interruptedAudio.SetupGet(file => file.Length).Returns(2);
+        interruptedAudio.Setup(file => file.CopyToAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .Returns(async (Stream stream, CancellationToken token) =>
+            {
+                await stream.WriteAsync(new byte[] { 4 }, token);
+                throw new IOException("synthetic interrupted audio copy");
+            });
+        var srt = Encoding.UTF8.GetBytes("1\n00:00:00,000 --> 00:00:02,000\n我爱读书。\n");
+        var interruptedSrt = FormFileFromBytes(srt, @"C:\fakepath\interrupted.srt", "text/plain");
+        var expectedFiles = new List<string> { existingAudioPath };
+
+        if (batch)
+        {
+            byte[] completedAudio = [5, 6];
+            Assert.IsType<OkObjectResult>(await h.Controller().CreateAudioLessonsBatch(
+                new CreateAudioLessonsBatchDto { LanguageId = 1 },
+                [interruptedAudio.Object, interruptedSrt,
+                    FormFileFromBytes(completedAudio, @"C:\fakepath\complete.mp3", "audio/mpeg"),
+                    FormFileFromBytes(srt, "complete.srt", "text/plain")]));
+
+            var lesson = Assert.Single(await h.Context.Texts.AsNoTracking().ToArrayAsync());
+            Assert.EndsWith("_complete.mp3", lesson.AudioFilePath);
+            var completedAudioPath = Path.Combine(h.WebRoot, lesson.AudioFilePath!);
+            Assert.Equal(completedAudio, await File.ReadAllBytesAsync(completedAudioPath));
+            expectedFiles.Add(completedAudioPath);
+            Assert.True(h.Channel.Reader.TryRead(out var queued));
+            Assert.Equal(lesson.TextId, queued.TextId);
+        }
+        else
+        {
+            var failure = Assert.IsType<ObjectResult>((await h.Controller().CreateAudioLesson(new CreateAudioLessonDto
+            {
+                Title = "Interrupted lesson",
+                LanguageId = 1,
+                AudioFile = interruptedAudio.Object,
+                SrtFile = interruptedSrt
+            })).Result);
+            Assert.Equal(500, failure.StatusCode);
+            Assert.Empty(await h.Context.Texts.AsNoTracking().ToArrayAsync());
+        }
+
+        interruptedAudio.Verify(file => file.CopyToAsync(It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Once);
+        Assert.False(h.Channel.Reader.TryRead(out _));
+        Assert.Equal(existingAudio, await File.ReadAllBytesAsync(existingAudioPath));
+        Assert.Equal(expectedFiles.Select(Path.GetFileName).Order(), Directory.GetFiles(audioDirectory).Select(Path.GetFileName).Order());
     }
 
     private static CreateTextDto Request(string? profile = null) => new() {

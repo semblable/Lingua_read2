@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { Container, Form, Button, Alert, Card } from 'react-bootstrap';
 import { useAuthStore } from '../utils/store';
+import { LoginError } from '../utils/api/auth';
 
 const Login = () => {
   const [password, setPassword] = useState('');
+  const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  const [recoveryToken, setRecoveryToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const login = useAuthStore((s) => s.login);
@@ -14,9 +17,16 @@ const Login = () => {
     setError('');
     setLoading(true);
     try {
-      await login(password);
+      const token = recoveryToken.trim();
+      await (token ? login(password, token) : login(password));
+      setRecoveryAvailable(false);
+      setRecoveryToken('');
     } catch (err: unknown) {
-      setError((err as Error)?.message || 'Login failed.');
+      if (err instanceof LoginError && err.recoveryAvailable !== undefined) {
+        setRecoveryAvailable(err.recoveryAvailable);
+        if (!err.recoveryAvailable) setRecoveryToken('');
+      }
+      setError(err instanceof Error ? err.message : 'Login failed.');
     } finally {
       setLoading(false);
     }
@@ -34,6 +44,7 @@ const Login = () => {
               <Form.Label>Password</Form.Label>
               <Form.Control
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
@@ -42,6 +53,11 @@ const Login = () => {
                 size="lg"
               />
             </Form.Group>
+            {recoveryAvailable && <Form.Group className="mb-3" controlId="recovery-token">
+              <Form.Label>Owner recovery code (optional)</Form.Label>
+              <Form.Control type="password" autoComplete="off" value={recoveryToken}
+                onChange={event => setRecoveryToken(event.target.value)} />
+            </Form.Group>}
             <Button
               variant="primary"
               type="submit"

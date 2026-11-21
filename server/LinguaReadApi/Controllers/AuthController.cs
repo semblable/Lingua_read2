@@ -7,6 +7,7 @@ using System;
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using LinguaReadApi.Data;
@@ -19,6 +20,7 @@ namespace LinguaReadApi.Controllers
     public class LoginRequest
     {
         public string Password { get; set; } = string.Empty;
+        public string? RecoveryToken { get; set; }
     }
 
     public class SetupRequest
@@ -68,7 +70,7 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(new { message = "Password is required." });
             }
 
-            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, () => LoginCore(request.Password));
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, () => LoginCore(request));
             if (errorResult != null) return errorResult;
 
             var token = GenerateJwtToken(user!);
@@ -78,7 +80,7 @@ namespace LinguaReadApi.Controllers
             return Ok(new { message = "Login successful." });
         }
 
-        private async Task<(IActionResult? Error, User? User)> LoginCore(string password)
+        private async Task<(IActionResult? Error, User? User)> LoginCore(LoginRequest request)
         {
             var user = await _context.Users.FindAsync(DefaultUserId);
             if (user == null)
@@ -93,18 +95,29 @@ namespace LinguaReadApi.Controllers
             }
 
             var now = DateTimeOffset.UtcNow;
-            if (user.LockoutEnd > now)
-                return (Unauthorized(new { message = "Too many failed attempts. Try again later." }), null);
-            if (user.LockoutEnd.HasValue)
+            var locked = user.LockoutEnd > now;
+            if (locked)
+            {
+                var configuredToken = _configuration["Auth:RecoveryToken"];
+                var recoveryAvailable = IsRecoveryToken(configuredToken);
+                if (!recoveryAvailable || !IsRecoveryToken(request.RecoveryToken) ||
+                    !CryptographicOperations.FixedTimeEquals(
+                        Convert.FromHexString(configuredToken!), Convert.FromHexString(request.RecoveryToken!)))
+                {
+                    return (LockedSignIn(recoveryAvailable), null);
+                }
+            }
+            else if (user.LockoutEnd.HasValue)
             {
                 user.LockoutEnd = null;
                 user.AccessFailedCount = 0;
             }
 
-            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
+            var result = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
             if (result == PasswordVerificationResult.Failed)
             {
                 _logger.LogWarning("[AuthController] Failed login attempt.");
+                if (locked) return (LockedSignIn(recoveryAvailable: true), null);
                 user.AccessFailedCount++;
                 if (user.AccessFailedCount >= 5) user.LockoutEnd = now.AddMinutes(15);
                 await _context.SaveChangesAsync();
@@ -114,7 +127,7 @@ namespace LinguaReadApi.Controllers
             // Rehash if needed (e.g. algorithm upgrade)
             if (result == PasswordVerificationResult.SuccessRehashNeeded)
             {
-                user.PasswordHash = _passwordHasher.HashPassword(user, password);
+                user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
                 await _context.SaveChangesAsync();
             }
 
@@ -127,6 +140,16 @@ namespace LinguaReadApi.Controllers
 
             return (null, user);
         }
+
+        private static bool IsRecoveryToken(string? token) => token is { Length: 64 } && token.All(Uri.IsHexDigit);
+
+        private UnauthorizedObjectResult LockedSignIn(bool recoveryAvailable) => Unauthorized(new
+        {
+            message = recoveryAvailable
+                ? "Sign-in is temporarily locked. Use your recovery code with your password or try again later."
+                : "Too many failed attempts. Try again later.",
+            recoveryAvailable
+        });
 
         [AllowAnonymous]
         [HttpPost("logout")]

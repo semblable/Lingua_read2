@@ -518,17 +518,17 @@ namespace LinguaReadApi.Controllers
             try
             {
                 // --- 1. Save Audio File ---
-                var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(createAudioLessonDto.AudioFile.FileName)}";
+                var audioFileName = $"{Guid.NewGuid()}_{GetUploadFileName(createAudioLessonDto.AudioFile.FileName)}";
                 var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString()); // Consider configuration for base path
                 Directory.CreateDirectory(userAudioDir); // Ensure directory exists
                 var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
 
-                using (var stream = new FileStream(fullAudioPath, FileMode.Create))
+                using (var stream = new FileStream(fullAudioPath, FileMode.CreateNew))
                 {
+                    // Track the file after opening it so a failed copy can remove it.
+                    audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
                     await createAudioLessonDto.AudioFile.CopyToAsync(stream);
                 }
-                // Store relative path for access via web server
-                audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
 
 
                 // --- 2. Read and Parse SRT File ---
@@ -598,6 +598,9 @@ namespace LinguaReadApi.Controllers
 
         private void TryDeleteAudioFile(string? relativeAudioPath)
             => BookAssetStorage.DeleteAudioLessonFile(relativeAudioPath, _logger, WebRoot);
+
+        private static string GetUploadFileName(string fileName) =>
+            Path.GetFileName(fileName.Replace('\\', '/'));
 
         internal static string ParseSrt(string srtContent)
         {
@@ -688,16 +691,16 @@ namespace LinguaReadApi.Controllers
                     try
                     {
                         // --- 1. Save Audio File ---
-                        var audioFileName = $"{Guid.NewGuid()}_{Path.GetFileName(mp3Info.File.FileName)}";
+                        var audioFileName = $"{Guid.NewGuid()}_{GetUploadFileName(mp3Info.File.FileName)}";
                         var userAudioDir = Path.Combine(WebRoot ?? "wwwroot", "audio_lessons", userId.ToString());
                         Directory.CreateDirectory(userAudioDir);
                         var fullAudioPath = Path.Combine(userAudioDir, audioFileName);
 
-                        using (var stream = new FileStream(fullAudioPath, FileMode.Create))
+                        using (var stream = new FileStream(fullAudioPath, FileMode.CreateNew))
                         {
+                            audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
                             await mp3Info.File.CopyToAsync(stream);
                         }
-                        audioFilePath = Path.Combine("audio_lessons", userId.ToString(), audioFileName).Replace("\\", "/");
 
                         // --- 2. Read and Parse SRT File ---
                         string srtContent;
@@ -836,9 +839,10 @@ namespace LinguaReadApi.Controllers
             var result = new FileInfoResult { File = file, OriginalName = file.FileName };
             try
             {
-                result.BaseName = Path.GetFileNameWithoutExtension(file.FileName);
+                var fileName = GetUploadFileName(file.FileName);
+                result.BaseName = Path.GetFileNameWithoutExtension(fileName);
                 result.NormalizedBaseName = NormalizeBaseName(result.BaseName);
-                var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var extension = Path.GetExtension(fileName).ToLowerInvariant();
 
                 if (new[] { ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wav" }.Contains(extension)) result.Type = FileType.MP3;
                 else if (extension == ".srt") result.Type = FileType.SRT;

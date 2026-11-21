@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Button, Modal } from 'react-bootstrap';
+import { Modal } from 'react-bootstrap';
 import { useReducedMotion } from '../../hooks/useReducedMotion';
 import { containModalTabKey } from '../../utils/keyboard';
 
@@ -35,7 +35,6 @@ export default function WordLookupSheet({ show, onClose, onRestoreFocus, childre
         <Modal.Title id={titleId} as="h2" className="h5">Word information</Modal.Title>
       </Modal.Header>
       <Modal.Body className="word-info-sheet-content">{children}</Modal.Body>
-      <Modal.Footer><Button variant="secondary" onClick={onClose}>Close word information</Button></Modal.Footer>
     </Modal>
   );
 }

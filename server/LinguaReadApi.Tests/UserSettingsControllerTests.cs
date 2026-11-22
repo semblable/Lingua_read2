@@ -998,6 +998,118 @@ public class UserSettingsControllerTests
     }
 
     [Fact]
+    public async Task SrsNewCardOrderAndLimitGuardrails_DefaultRoundTripAndValidate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+        await using (var context = new AppDbContext(options))
+        {
+            await context.Database.EnsureCreatedAsync();
+            context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+            await context.SaveChangesAsync();
+
+            var controller = CreateController(context, userId);
+            var defaults = Assert.IsType<UserSettingsDto>((await controller.GetUserSettings()).Value);
+            Assert.Equal("recent_frequent", defaults.SrsNewCardOrder);
+            Assert.False(defaults.SrsNewCardsIgnoreReviewLimit);
+
+            // First write setting SrsMaxNewCards = 0 must persist 0 cleanly in relational storage.
+            var saved = Assert.IsType<UserSettingsDto>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxNewCards = 0,
+                SrsNewCardOrder = "  NEWEST ",
+                SrsNewCardsIgnoreReviewLimit = true
+            })).Value);
+            Assert.Equal(0, saved.SrsMaxNewCards);
+            Assert.Equal("newest", saved.SrsNewCardOrder);
+            Assert.True(saved.SrsNewCardsIgnoreReviewLimit);
+
+            Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsNewCardOrder = "random_magic"
+            })).Result);
+            Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxNewCards = -1
+            })).Result);
+            Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxNewCards = 10000
+            })).Result);
+            Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxReviews = 0
+            })).Result);
+            Assert.IsType<BadRequestObjectResult>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxReviews = 10000
+            })).Result);
+
+            // Toggle ignoreReviewLimit back from true to false and verify persistence.
+            var toggledBack = Assert.IsType<UserSettingsDto>((await controller.UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsNewCardsIgnoreReviewLimit = false
+            })).Value);
+            Assert.False(toggledBack.SrsNewCardsIgnoreReviewLimit);
+        }
+
+        await using var verify = new AppDbContext(options);
+        var reloaded = Assert.IsType<UserSettingsDto>((await CreateController(verify, userId).GetUserSettings()).Value);
+        Assert.Equal(0, reloaded.SrsMaxNewCards);
+        Assert.Equal("newest", reloaded.SrsNewCardOrder);
+        Assert.False(reloaded.SrsNewCardsIgnoreReviewLimit);
+    }
+
+    [Fact]
+    public async Task SrsMaxNewCardsZero_FirstWriteInsertPersistsZeroInRelationalStorage()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options;
+        var userId = Guid.NewGuid();
+        await using (var context = new AppDbContext(options))
+        {
+            await context.Database.EnsureCreatedAsync();
+            context.Users.Add(new User { Id = userId, UserName = "firstwrite", Email = "fw@test.com" });
+            await context.SaveChangesAsync();
+
+            // Do NOT call GetUserSettings() first — exercise the INSERT path directly with SrsMaxNewCards = 0.
+            var inserted = Assert.IsType<UserSettingsDto>((await CreateController(context, userId).UpdateUserSettings(new UpdateUserSettingsDto
+            {
+                SrsMaxNewCards = 0,
+                SrsNewCardOrder = "frequent",
+                SrsNewCardsIgnoreReviewLimit = true
+            })).Value);
+            Assert.Equal(0, inserted.SrsMaxNewCards);
+            Assert.Equal("frequent", inserted.SrsNewCardOrder);
+            Assert.True(inserted.SrsNewCardsIgnoreReviewLimit);
+        }
+
+        await using var verify = new AppDbContext(options);
+        var row = await verify.UserSettings.AsNoTracking().SingleAsync(s => s.UserId == userId);
+        Assert.Equal(0, row.SrsMaxNewCards);
+        Assert.Equal("frequent", row.SrsNewCardOrder);
+        Assert.True(row.SrsNewCardsIgnoreReviewLimit);
+    }
+
+    [Fact]
+    public void SrsNewCardOrderingMigration_AddsExpectedColumnsWithCompatibleDefaults()
+    {
+        var migration = new LinguaReadApi.Data.Migrations.AddSrsNewCardOrderingAndLimitGuardrails();
+        var additions = migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddColumnOperation>().ToList();
+        Assert.Equal(2, migration.UpOperations.Count);
+        Assert.Equal(2, additions.Count);
+        var order = Assert.Single(additions, c => c.Name == "SrsNewCardOrder");
+        var ignore = Assert.Single(additions, c => c.Name == "SrsNewCardsIgnoreReviewLimit");
+        Assert.Equal("UserSettings", order.Table);
+        Assert.Equal("recent_frequent", order.DefaultValue);
+        Assert.Equal("UserSettings", ignore.Table);
+        Assert.Equal(false, ignore.DefaultValue);
+    }
+
+    [Fact]
     public async Task UpdateUserSettings_ClearingHardcoverTokenViaWhitespace_ResetsTokenSyncAndLastSyncAt()
     {
         await using var context = CreateContext();

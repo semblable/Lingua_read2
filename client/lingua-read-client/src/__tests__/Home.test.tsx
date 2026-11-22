@@ -165,6 +165,132 @@ describe('Home (integration)', () => {
     expect(screen.queryByTestId('hero-chip-srs')).not.toBeInTheDocument();
   });
 
+  test('shows today reviewable workload and backlog breakdown instead of raw untouched dueCount', async () => {
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 1200,
+      totalWordsReadWeek: 450,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 1,
+      languages: [
+        {
+          languageId: 1,
+          languageName: 'Spanish',
+          knownWords: 1200,
+          totalWords: 4000,
+          knownWordsToNextLevel: 500,
+          todayWordsRead: 100,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 2,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-05-25',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+    mockedGetSrsStats.mockResolvedValue({
+      dueCount: 2600,
+      reviewableCount: 25,
+      dueLearningCount: 0,
+      dueReviewCount: 5,
+      dueNewCount: 2595,
+      reviewableReviewCount: 5,
+      reviewableNewCount: 20,
+      newCardsPausedByReviewLimit: false,
+    } as unknown as Awaited<ReturnType<typeof getSrsStats>>);
+
+    renderHome();
+
+    expect(await screen.findByText('25 due')).toBeVisible();
+    expect(screen.queryByText('2,600 due')).not.toBeInTheDocument();
+    expect(screen.getByTestId('srs-due-breakdown')).toHaveTextContent(
+      '5 reviews today · 20 new today · 2,575 saved for later'
+    );
+    expect(screen.getByRole('button', { name: /Review 25 cards/ })).toHaveAttribute('href', '/srs?limit=25');
+  });
+
+  test('shows calm backlog summary on Home when today limit is complete and untouched words remain', async () => {
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 1200,
+      totalWordsReadWeek: 450,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 1,
+      languages: [
+        {
+          languageId: 1,
+          languageName: 'Spanish',
+          knownWords: 1200,
+          totalWords: 4000,
+          knownWordsToNextLevel: 500,
+          todayWordsRead: 100,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 2,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-05-25',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+    mockedGetSrsStats.mockResolvedValue({
+      dueCount: 2600,
+      reviewableCount: 0,
+      dueLearningCount: 0,
+      dueReviewCount: 0,
+      dueNewCount: 2600,
+      reviewableReviewCount: 0,
+      reviewableNewCount: 0,
+      newCardsPausedByReviewLimit: false,
+    } as unknown as Awaited<ReturnType<typeof getSrsStats>>);
+
+    renderHome();
+
+    expect(await screen.findByRole('heading', { name: 'No reviews due' })).toBeVisible();
+    expect(screen.getByTestId('srs-due-backlog')).toHaveTextContent('2,600 saved words waiting for future sessions.');
+  });
+
+  test('derives learning, deferred review, and review-limit pause props for SrsDueWidget on Home', async () => {
+    mockedGetDashboard.mockResolvedValue({
+      totalKnownWords: 1200,
+      totalWordsReadWeek: 450,
+      totalListeningSecondsWeek: 0,
+      totalLanguages: 1,
+      languages: [
+        {
+          languageId: 1,
+          languageName: 'Spanish',
+          knownWords: 1200,
+          totalWords: 4000,
+          knownWordsToNextLevel: 500,
+          todayWordsRead: 100,
+          todayListeningSeconds: 0,
+          currentReadingStreakDays: 2,
+          last14DaysWords: [],
+          continueReadingTextId: null,
+          lastActivityAt: '2026-05-25',
+        },
+      ],
+    } as unknown as Awaited<ReturnType<typeof getDashboard>>);
+    mockedGetSrsStats.mockResolvedValue({
+      dueCount: 753,
+      reviewableCount: 203,
+      dueLearningCount: 3,
+      dueReviewCount: 250,
+      dueNewCount: 500,
+      reviewableReviewCount: 200,
+      reviewableNewCount: 0,
+      newCardsPausedByReviewLimit: true,
+    } as unknown as Awaited<ReturnType<typeof getSrsStats>>);
+
+    renderHome();
+
+    expect(await screen.findByText('203 due')).toBeVisible();
+    expect(screen.getByTestId('srs-due-breakdown')).toHaveTextContent(
+      '3 learning · 200 reviews today · 50 more reviews queued · 500 saved for later'
+    );
+    expect(screen.getByTestId('srs-review-limit-note')).toHaveTextContent(
+      "New cards paused while reviews fill today's limit."
+    );
+  });
+
   test('falls back gracefully when individual fetches reject', async () => {
     const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     mockedGetDashboard.mockResolvedValue({

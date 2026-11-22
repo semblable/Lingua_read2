@@ -36,8 +36,9 @@ const SrsStoryReview = () => {
   );
   const [statusFilter, setStatusFilter] = useState<number[]>([1, 2, 3, 4, 5]);
   const [cardType, setCardType] = useState('all');
+  // Default to the user's daily new-card cap when active, or 15 when new cards are paused (0/day).
   const [maxWords, setMaxWords] = useState(() =>
-    Math.min(30, Math.max(3, settings.srsMaxNewCards || 15))
+    (settings.srsMaxNewCards ?? 0) > 0 ? Math.min(30, Math.max(3, settings.srsMaxNewCards)) : 15
   );
 
   // Session state
@@ -297,6 +298,27 @@ const SrsStoryReview = () => {
   const reviewedCount = reviewedWords.size;
   const totalToReview = microContexts.length;
 
+  const remainingNewLeft = stats
+    ? (stats.reviewableNewCount ?? Math.max(0, (stats.maxNewCards ?? 20) - (stats.studiedNewCardsToday ?? 0)))
+    : 0;
+  const remainingRevLeft = stats
+    ? (stats.reviewableReviewCount != null
+      ? (stats.dueLearningCount ?? 0) + stats.reviewableReviewCount
+      : Math.max(0, (stats.maxReviews ?? 200) - (stats.studiedReviewsToday ?? 0)))
+    : 0;
+  const newUnavailableMessage =
+    stats?.maxNewCards === 0
+      ? 'New cards are paused (0/day).'
+      : stats?.newCardsPausedByReviewLimit
+        ? 'New cards paused today while scheduled reviews fill your daily limit.'
+        : (stats?.dueNewCount ?? 1) === 0
+          ? 'No new cards waiting to introduce.'
+          : 'Daily new card limit reached.';
+  const reviewUnavailableMessage =
+    (stats?.dueReviewCount ?? 0) > 0 && (stats?.studiedReviewsToday ?? 0) >= (stats?.maxReviews ?? 200)
+      ? 'Daily review limit reached.'
+      : 'No review cards due.';
+
   // --- Setup Phase ---
   if (phase === 'setup') {
     return (
@@ -312,12 +334,12 @@ const SrsStoryReview = () => {
           <Card className="mb-3 shadow-sm">
             <Card.Body className="py-3">
               <Row className="text-center g-2">
-                <Col><div className="fw-bold text-danger">{stats.dueCount}</div><small className="text-muted">Due</small></Col>
+                <Col><div className="fw-bold text-danger">{stats.reviewableCount ?? stats.dueCount}</div><small className="text-muted">Due</small></Col>
                 <Col><div className="fw-bold text-info">{stats.newCards}</div><small className="text-muted">New</small></Col>
                 <Col><div className="fw-bold text-warning">{stats.learningCards}</div><small className="text-muted">Learning</small></Col>
                 <Col><div className="fw-bold text-success">{stats.matureCards}</div><small className="text-muted">Mature</small></Col>
-                <Col><div className="fw-bold text-primary">{Math.max(0, (stats.maxNewCards || 20) - (stats.studiedNewCardsToday || 0))}</div><small className="text-muted">New Left</small></Col>
-                <Col><div className="fw-bold text-secondary">{Math.max(0, (stats.maxReviews || 100) - (stats.studiedReviewsToday || 0))}</div><small className="text-muted">Rev Left</small></Col>
+                <Col><div className="fw-bold text-primary">{remainingNewLeft}</div><small className="text-muted">New Left</small></Col>
+                <Col><div className="fw-bold text-secondary">{remainingRevLeft}</div><small className="text-muted">Rev Left</small></Col>
               </Row>
             </Card.Body>
           </Card>
@@ -378,11 +400,16 @@ const SrsStoryReview = () => {
                   ))}
                 </ButtonGroup>
               </div>
-              {stats && cardType === 'new' && Math.max(0, (stats.maxNewCards || 20) - (stats.studiedNewCardsToday || 0)) === 0 && (
-                <small className="text-danger d-block mt-1">Daily new card limit reached.</small>
+              {stats && cardType === 'new' && remainingNewLeft === 0 && (
+                <small className="text-danger d-block mt-1">{newUnavailableMessage}</small>
               )}
-              {stats && cardType === 'review' && Math.max(0, (stats.maxReviews || 100) - (stats.studiedReviewsToday || 0)) === 0 && (
-                <small className="text-danger d-block mt-1">Daily review limit reached.</small>
+              {stats && cardType === 'all' && stats.newCardsPausedByReviewLimit && (
+                <small className="text-muted d-block mt-1" data-testid="story-review-limit-paused-notice">
+                  New cards paused today while scheduled reviews fill your daily limit.
+                </small>
+              )}
+              {stats && cardType === 'review' && remainingRevLeft === 0 && (
+                <small className="text-danger d-block mt-1">{reviewUnavailableMessage}</small>
               )}
             </Form.Group>
 
@@ -549,7 +576,18 @@ const SrsStoryReview = () => {
           >
             {reviewedCount >= totalToReview ? 'Finish Review' : 'Finish Early'}
           </Button>
-          <Button variant="outline-primary" size="sm" onClick={() => { setPhase('setup'); setMicroContexts([]); }}>
+          <Button
+            variant="outline-primary"
+            size="sm"
+            onClick={() => {
+              setPhase('setup');
+              setMicroContexts([]);
+              setReviewedWords(new Map());
+              setReviewNotes(new Map());
+              setRevealedWords(new Set());
+              loadStats();
+            }}
+          >
             New Session
           </Button>
         </div>

@@ -7399,6 +7399,17 @@ export interface components {
             /** Format: int32 */
             reviewableCount?: number;
             /** Format: int32 */
+            dueLearningCount?: number;
+            /** Format: int32 */
+            dueReviewCount?: number;
+            /** Format: int32 */
+            dueNewCount?: number;
+            /** Format: int32 */
+            reviewableReviewCount?: number;
+            /** Format: int32 */
+            reviewableNewCount?: number;
+            newCardsPausedByReviewLimit?: boolean;
+            /** Format: int32 */
             totalCards?: number;
             /** Format: int32 */
             newCards?: number;
@@ -7861,6 +7872,8 @@ export interface components {
             /** Format: int32 */
             srsMaxReviews?: number | null;
             srsReviewOrder?: string | null;
+            srsNewCardOrder?: string | null;
+            srsNewCardsIgnoreReviewLimit?: boolean | null;
             srsLearningStepMinutes?: string | null;
             /** Format: int32 */
             srsMaxIntervalDays?: number | null;
@@ -8015,6 +8028,8 @@ export interface components {
             /** Format: int32 */
             srsMaxReviews?: number;
             srsReviewOrder?: string | null;
+            srsNewCardOrder?: string | null;
+            srsNewCardsIgnoreReviewLimit?: boolean;
             /** Format: date-time */
             srsDailyStudyDate?: string | null;
             /** Format: int32 */
@@ -8140,6 +8155,8 @@ export interface components {
             /** Format: int32 */
             srsMaxReviews?: number;
             srsReviewOrder?: string | null;
+            srsNewCardOrder?: string | null;
+            srsNewCardsIgnoreReviewLimit?: boolean;
             srsLearningStepMinutes?: string | null;
             /** Format: int32 */
             srsMaxIntervalDays?: number;

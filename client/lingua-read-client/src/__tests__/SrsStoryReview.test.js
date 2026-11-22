@@ -470,4 +470,103 @@ describe('SrsStoryReview (micro-contexts)', () => {
     // The other card stays hidden until its own reveal
     expect(within(cards[1]).queryByTestId('srs-microcontext-translation')).not.toBeInTheDocument();
   });
+
+  it('uses reviewableCount and honors maxNewCards = 0 instead of falling back to 20', async () => {
+    getSrsStats.mockResolvedValue({
+      dueCount: 2600,
+      reviewableCount: 12,
+      newCards: 2588,
+      learningCards: 0,
+      matureCards: 7,
+      maxNewCards: 0,
+      studiedNewCardsToday: 0,
+      maxReviews: 200,
+      studiedReviewsToday: 0,
+      reviewableNewCount: 0,
+      dueNewCount: 2588,
+      newCardsPausedByReviewLimit: false,
+      currentStreak: 3,
+      retentionRate: 90
+    });
+    renderComponent();
+    await selectSpanish();
+
+    expect(await screen.findByText('12')).toBeInTheDocument();
+    expect(screen.queryByText('2600')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('New Only'));
+    expect(screen.getByText('New cards are paused (0/day).')).toBeInTheDocument();
+  });
+
+  it('shows review-limit pause notice on All Words, distinguishes empty review queue, and refreshes stats on New Session', async () => {
+    getSrsStats.mockResolvedValue({
+      dueCount: 300,
+      reviewableCount: 2,
+      dueLearningCount: 2,
+      dueReviewCount: 250,
+      reviewableReviewCount: 0,
+      dueNewCount: 48,
+      reviewableNewCount: 0,
+      newCards: 48,
+      learningCards: 2,
+      matureCards: 7,
+      maxNewCards: 20,
+      studiedNewCardsToday: 0,
+      maxReviews: 200,
+      studiedReviewsToday: 200,
+      newCardsPausedByReviewLimit: true,
+      currentStreak: 3,
+      retentionRate: 90
+    });
+    renderComponent();
+    await selectSpanish();
+
+    // All Words tab surfaces the review-limit pause notice.
+    expect(await screen.findByTestId('story-review-limit-paused-notice')).toHaveTextContent(
+      /New cards paused today while scheduled reviews fill your daily limit/
+    );
+
+    // Review Only must NOT warn when dueLearningCount = 2 makes remainingRevLeft = 2.
+    fireEvent.click(screen.getByLabelText('Review Only'));
+    expect(screen.queryByText(/Daily review limit reached/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No review cards due/i)).not.toBeInTheDocument();
+
+    // Start a session and click New Session -> refreshes stats.
+    fireEvent.click(screen.getByLabelText('All Words'));
+    fireEvent.click(screen.getByRole('button', { name: /Generate/i }));
+    await screen.findByText(/duerme/);
+    const callsBeforeNewSession = getSrsStats.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: /New Session/i }));
+    await waitFor(() => expect(getSrsStats.mock.calls.length).toBeGreaterThan(callsBeforeNewSession));
+  });
+
+  it('explains when no new or review cards are waiting instead of claiming daily limit reached', async () => {
+    getSrsStats.mockResolvedValue({
+      dueCount: 0,
+      reviewableCount: 0,
+      dueLearningCount: 0,
+      dueReviewCount: 0,
+      reviewableReviewCount: 0,
+      dueNewCount: 0,
+      reviewableNewCount: 0,
+      newCards: 0,
+      learningCards: 0,
+      matureCards: 10,
+      maxNewCards: 20,
+      studiedNewCardsToday: 0,
+      maxReviews: 200,
+      studiedReviewsToday: 0,
+      newCardsPausedByReviewLimit: false,
+      currentStreak: 3,
+      retentionRate: 90
+    });
+    renderComponent();
+    await selectSpanish();
+
+    fireEvent.click(await screen.findByLabelText('New Only'));
+    expect(screen.getByText('No new cards waiting to introduce.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Review Only'));
+    expect(screen.getByText('No review cards due.')).toBeInTheDocument();
+  });
 });

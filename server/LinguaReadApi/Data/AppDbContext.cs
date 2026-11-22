@@ -229,6 +229,12 @@ namespace LinguaReadApi.Data
             modelBuilder.Entity<UserSettings>()
                 .Property(us => us.ReaderStatusMarkersEnabled)
                 .HasDefaultValue(false);
+            modelBuilder.Entity<UserSettings>()
+                .Property(us => us.SrsNewCardOrder)
+                .HasDefaultValue("recent_frequent");
+            modelBuilder.Entity<UserSettings>()
+                .Property(us => us.SrsNewCardsIgnoreReviewLimit)
+                .HasDefaultValue(false);
 
             // Encrypt secret UserSettings columns at rest. Transparent to every reader/writer; the
             // columns are unbounded text (see UserSettings) because ciphertext is longer than input.

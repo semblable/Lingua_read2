@@ -226,8 +226,20 @@ const Home: React.FC = () => {
 
   const topGoalSummary = useMemo(() => buildTopGoalSummary(goals ?? []), [goals]);
 
-  // Type-safe access to SrsStats (camelCase per OpenAPI).
-  const srsDueCount = (srsStats as { dueCount?: number } | null)?.dueCount ?? 0;
+  // Show today's quota-aware workload rather than the entire untouched backlog.
+  const srsReviewableCount = srsStats?.reviewableCount ?? srsStats?.dueCount ?? 0;
+  const srsLearningToday = srsStats?.dueLearningCount;
+  const srsReviewsToday = srsStats?.reviewableReviewCount;
+  const srsNewToday = srsStats?.reviewableNewCount;
+  const srsBacklogNewCount =
+    srsStats?.dueNewCount != null && srsStats?.reviewableNewCount != null
+      ? Math.max(0, srsStats.dueNewCount - srsStats.reviewableNewCount)
+      : undefined;
+  const srsDeferredReviewsCount =
+    srsStats?.dueReviewCount != null && srsStats?.reviewableReviewCount != null
+      ? Math.max(0, srsStats.dueReviewCount - srsStats.reviewableReviewCount)
+      : undefined;
+  const srsNewCardsPausedByReviewLimit = srsStats?.newCardsPausedByReviewLimit ?? false;
 
   // Default the goal-creation modal to the user's most-active language so it
   // matches what LanguagesStrip puts first (which is sorted by activity). The
@@ -290,7 +302,17 @@ const Home: React.FC = () => {
       </div>
       <div className="home-focus-grid">
         <ContinueLearningCard text={recent[0] ?? null} loading={loading && !recentTexts} />
-        <SrsDueWidget count={srsDueCount} loading={loading && !srsStats} unavailable={!loading && !srsStats} />
+        <SrsDueWidget
+          count={srsReviewableCount}
+          learningToday={srsLearningToday}
+          reviewsToday={srsReviewsToday}
+          newToday={srsNewToday}
+          backlogNewCount={srsBacklogNewCount}
+          deferredReviewsCount={srsDeferredReviewsCount}
+          newCardsPausedByReviewLimit={srsNewCardsPausedByReviewLimit}
+          loading={loading && !srsStats}
+          unavailable={!loading && !srsStats}
+        />
       </div>
       <MoreToResumeList texts={recent.slice(1, 5)} />
 

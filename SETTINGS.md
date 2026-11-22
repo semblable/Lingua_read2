@@ -263,9 +263,11 @@ Configure flashcard reviews. Cards are scheduled with **FSRS-6** (the algorithm 
 
 | Setting Field | Default Value | Allowed / Type | Description |
 | :--- | :---: | :--- | :--- |
-| `SrsMaxNewCards` | `20` | Positive Integer | Daily limit of new terms to introduce into study decks. |
-| `SrsMaxReviews` | `200` | Positive Integer | Maximum number of existing flashcards scheduled for review in a single day. |
+| `SrsMaxNewCards` | `20` | Non-negative Integer (`0`–`9999`) | Daily limit of new terms to introduce into study decks. Set to `0` to pause new cards while catching up on scheduled reviews. |
+| `SrsMaxReviews` | `200` | Positive Integer (`1`–`9999`) | Maximum number of existing flashcards scheduled for review in a single day. |
 | `SrsReviewOrder` | `"mix"` | `"mix"`, `"new_first"`, `"reviews_first"` | Determines the queue ordering of card presentation. |
+| `SrsNewCardOrder` | `"recent_frequent"` | `"recent_frequent"`, `"frequent"`, `"newest"`, `"oldest"` | Determines which untouched new cards enter study first: frequent words from recently opened texts or recent saves (`"recent_frequent"`), most frequent across your library (`"frequent"`), most recently seen (`"newest"`), or oldest added (`"oldest"`). |
+| `SrsNewCardsIgnoreReviewLimit` | `false` | `true` / `false` | Mirrors Anki's **New cards ignore review limit** option. When `false` (default), scheduled reviews have first claim on `SrsMaxReviews`, reducing or pausing new introductions so total daily cards stay within the review limit. |
 | `SrsLearningStepMinutes` | `"1,10"` | Comma-separated minutes | Steps a new card goes through (shown again after each, within the same session) before its first day-long interval. |
 | `SrsRelearningStepMinutes` | `"10"` | Comma-separated minutes | Steps a forgotten (lapsed) card goes through before it returns to review. |
 | `SrsDesiredRetention` | `0.9` | `0.70` - `0.97` | Target probability of recalling a card when it comes due. Higher means shorter intervals and more reviews. |

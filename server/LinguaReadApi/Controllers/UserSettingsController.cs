@@ -171,6 +171,8 @@ namespace LinguaReadApi.Controllers
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
+                SrsNewCardOrder = SrsQueuePolicy.NormalizeNewCardOrder(settings.SrsNewCardOrder),
+                SrsNewCardsIgnoreReviewLimit = settings.SrsNewCardsIgnoreReviewLimit,
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
                 SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
@@ -442,6 +444,14 @@ namespace LinguaReadApi.Controllers
             // stored due time would land on the previous day), so a change to any of them
             // reschedules those cards (in the same save).
             var scheduleBefore = (settings.SrsDesiredRetention, settings.SrsMaxIntervalDays, settings.SrsFsrsWeights, settings.SrsDayStartHour);
+            if (updateDto.SrsMaxNewCards is < 0 or > 9999)
+            {
+                return BadRequest(new { message = "srsMaxNewCards must be between 0 and 9999." });
+            }
+            if (updateDto.SrsMaxReviews is < 1 or > 9999)
+            {
+                return BadRequest(new { message = "srsMaxReviews must be between 1 and 9999." });
+            }
             settings.SrsMaxNewCards = updateDto.SrsMaxNewCards ?? settings.SrsMaxNewCards;
             settings.SrsMaxReviews = updateDto.SrsMaxReviews ?? settings.SrsMaxReviews;
             if (!string.IsNullOrWhiteSpace(updateDto.SrsReviewOrder))
@@ -452,6 +462,20 @@ namespace LinguaReadApi.Controllers
                     settings.SrsReviewOrder = normalizedOrder;
                 }
             }
+            if (!string.IsNullOrWhiteSpace(updateDto.SrsNewCardOrder))
+            {
+                var normalizedNewOrder = updateDto.SrsNewCardOrder.Trim().ToLowerInvariant();
+                if (!SrsQueuePolicy.IsNewCardOrder(normalizedNewOrder))
+                {
+                    return BadRequest(new
+                    {
+                        message = "srsNewCardOrder must be one of: recent_frequent, frequent, newest, oldest."
+                    });
+                }
+                settings.SrsNewCardOrder = normalizedNewOrder;
+            }
+            settings.SrsNewCardsIgnoreReviewLimit =
+                updateDto.SrsNewCardsIgnoreReviewLimit ?? settings.SrsNewCardsIgnoreReviewLimit;
             if (updateDto.SrsLearningStepMinutes != null)
             {
                 settings.SrsLearningStepMinutes = string.IsNullOrWhiteSpace(updateDto.SrsLearningStepMinutes)
@@ -618,6 +642,8 @@ namespace LinguaReadApi.Controllers
                 SrsMaxNewCards = settings.SrsMaxNewCards,
                 SrsMaxReviews = settings.SrsMaxReviews,
                 SrsReviewOrder = settings.SrsReviewOrder ?? "mix",
+                SrsNewCardOrder = SrsQueuePolicy.NormalizeNewCardOrder(settings.SrsNewCardOrder),
+                SrsNewCardsIgnoreReviewLimit = settings.SrsNewCardsIgnoreReviewLimit,
                 SrsLearningStepMinutes = settings.SrsLearningStepMinutes ?? "1,10",
                 SrsMaxIntervalDays = settings.SrsMaxIntervalDays,
                 SrsLapseMinimumIntervalDays = settings.SrsLapseMinimumIntervalDays,
@@ -1021,6 +1047,8 @@ namespace LinguaReadApi.Controllers
         public int SrsMaxNewCards { get; set; } = 20;
         public int SrsMaxReviews { get; set; } = 200;
         public string SrsReviewOrder { get; set; } = "mix";
+        public string SrsNewCardOrder { get; set; } = "recent_frequent";
+        public bool SrsNewCardsIgnoreReviewLimit { get; set; } = false;
         public string? SrsLearningStepMinutes { get; set; } = "1,10";
         public int SrsMaxIntervalDays { get; set; } = 36500;
         public int SrsLapseMinimumIntervalDays { get; set; } = 1;
@@ -1165,7 +1193,7 @@ namespace LinguaReadApi.Controllers
         public string? CustomSummarizationPrompt { get; set; }
 
         // SRS Settings
-        [Range(1, 9999)]
+        [Range(0, 9999)]
         public int? SrsMaxNewCards { get; set; }
 
         [Range(1, 9999)]
@@ -1173,6 +1201,11 @@ namespace LinguaReadApi.Controllers
 
         [StringLength(20)]
         public string? SrsReviewOrder { get; set; }
+
+        [StringLength(20)]
+        public string? SrsNewCardOrder { get; set; }
+
+        public bool? SrsNewCardsIgnoreReviewLimit { get; set; }
 
         [StringLength(50)]
         public string? SrsLearningStepMinutes { get; set; }

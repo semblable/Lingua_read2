@@ -165,6 +165,14 @@ namespace LinguaReadApi.Models
         public int SrsMaxReviews { get; set; } = 200;
         public string SrsReviewOrder { get; set; } = "mix"; // "mix", "new_first", "reviews_first"
 
+        // Which untouched new cards enter study first: "recent_frequent", "frequent", "newest", "oldest".
+        [StringLength(20)]
+        public string SrsNewCardOrder { get; set; } = "recent_frequent";
+
+        // Anki's "New cards ignore review limit" (default false): when false, due reviews have first
+        // claim on SrsMaxReviews and pause new introductions once the daily review cap is filled.
+        public bool SrsNewCardsIgnoreReviewLimit { get; set; } = false;
+
         // SRS Daily Tracking
         public DateTime? SrsDailyStudyDate { get; set; }
         public int SrsDailyNewCardsStudied { get; set; } = 0;

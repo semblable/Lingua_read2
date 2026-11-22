@@ -420,6 +420,140 @@ describe('SrsReview', () => {
     });
   });
 
+  it('allows setting max new cards to 0, validates bounds inside the modal, and saves new card order and guardrail', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Maximum New Cards / Day'), { target: { value: '-1' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save Changes/i }));
+    expect(await within(dialog).findByText(/Max new cards must be between 0 and 9999/)).toBeInTheDocument();
+    expect(updateUserSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText('Maximum New Cards / Day'), { target: { value: '10000' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save Changes/i }));
+    expect(await within(dialog).findByText(/Max new cards must be between 0 and 9999/)).toBeInTheDocument();
+    expect(updateUserSettings).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText('Maximum New Cards / Day'), { target: { value: '0' } });
+    fireEvent.change(within(dialog).getByLabelText('New Card Order'), { target: { value: 'newest' } });
+    fireEvent.click(within(dialog).getByLabelText('New cards ignore review limit'));
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => {
+      expect(updateUserSettings).toHaveBeenCalledWith(expect.objectContaining({
+        srsMaxNewCards: 0,
+        srsNewCardOrder: 'newest',
+        srsNewCardsIgnoreReviewLimit: true
+      }));
+    });
+  });
+
+  it('discards dirty edits and clears modal validation errors when cancelling Options', async () => {
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Options/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Maximum New Cards / Day'), { target: { value: '-5' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /Save Changes/i }));
+    expect(await within(dialog).findByText(/Max new cards must be between 0 and 9999/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /Cancel/i }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: /Options/i }));
+    const reopened = await screen.findByRole('dialog');
+    expect(within(reopened).getByLabelText('Maximum New Cards / Day')).toHaveValue(20);
+    expect(within(reopened).queryByText(/Max new cards must be between 0 and 9999/)).not.toBeInTheDocument();
+  });
+
+  it('shows paused indicator and full bar when max new cards is 0', async () => {
+    getSrsStats.mockResolvedValue({
+      ...mockStats,
+      maxNewCards: 0,
+      studiedNewCardsToday: 2,
+      newCardsPausedByReviewLimit: false
+    });
+    renderComponent();
+    await selectSpanish();
+
+    expect(await screen.findByText(/2\/0 new \(paused\)/)).toBeInTheDocument();
+    expect(screen.queryByTestId('srs-review-limit-paused-notice')).not.toBeInTheDocument();
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars[0]).toHaveAttribute('aria-valuenow', '100');
+  });
+
+  it('shows review-limit pause notice and queued suffix when due reviews exceed daily limit', async () => {
+    getSrsStats.mockResolvedValue({
+      ...mockStats,
+      dueCount: 2500,
+      reviewableCount: 200,
+      dueReviewCount: 250,
+      reviewableReviewCount: 200,
+      maxNewCards: 20,
+      studiedNewCardsToday: 0,
+      studiedReviewsToday: 0,
+      maxReviews: 200,
+      newCardsPausedByReviewLimit: true
+    });
+    renderComponent();
+    await selectSpanish();
+
+    expect(await screen.findByTestId('srs-review-limit-paused-notice')).toHaveTextContent(
+      /New cards paused today while scheduled reviews fill your daily limit/
+    );
+    expect(screen.getByText(/\(\+50 queued\)/)).toBeInTheDocument();
+  });
+
+  it('shows accurate limit-reached alert on Session Complete without false 0/day new-limit warning', async () => {
+    getSrsStats.mockResolvedValue({
+      ...mockStats,
+      dueCount: 5,
+      reviewableCount: 0,
+      dueNewCount: 0,
+      newCards: 0,
+      dueReviewCount: 5,
+      reviewableReviewCount: 0,
+      maxNewCards: 0,
+      studiedNewCardsToday: 0,
+      maxReviews: 100,
+      studiedReviewsToday: 100,
+      newCardsPausedByReviewLimit: false
+    });
+    getSrsDueCards.mockResolvedValue([]);
+
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+
+    expect(await screen.findByText('Session Complete')).toBeInTheDocument();
+    const alert = screen.getByTestId('srs-limit-reached-alert');
+    expect(alert).toHaveTextContent('Review limit reached (100/day)');
+    expect(alert).toHaveTextContent('Adjust limits in SRS Options to review more.');
+    expect(alert).not.toHaveTextContent('New card limit reached');
+    expect(alert).not.toHaveTextContent('New cards paused (0/day)');
+    expect(screen.getByRole('button', { name: /Review More/i })).toBeDisabled();
+  });
+
+  it('displays a New card badge for unseen cards and hides it for graduated cards with 0 repetitions', async () => {
+    getSrsDueCards.mockResolvedValue([
+      { ...mockCards[0], hasEverGraduated: false, repetitions: 0 },
+      { ...mockCards[1], hasEverGraduated: true, repetitions: 0 }
+    ]);
+    renderComponent();
+    await selectSpanish();
+    fireEvent.click(await screen.findByRole('button', { name: /Start Review/i }));
+    await screen.findByText(/duerme/);
+    expect(screen.getByText('New card')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(/Click or press/));
+    fireEvent.click(await screen.findByRole('button', { name: /^Good/ }));
+    await screen.findByText(/corre/);
+    expect(screen.queryByText('New card')).not.toBeInTheDocument();
+  });
+
   it('flags a new leech and does not bring back a card the review suspended', async () => {
     submitSrsReview.mockResolvedValue({
       queued: false,

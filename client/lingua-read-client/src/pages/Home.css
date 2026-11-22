@@ -130,6 +130,8 @@
 .home-review-card p { font-size: .8125rem; line-height: 1.6; margin-bottom: 20px; }
 .home-review-start { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; width: 100%; }
 .home-review-due { color: var(--home-muted); font-size: .8125rem; margin: -8px 0 14px; }
+.home-review-breakdown { color: var(--home-muted); font-size: .75rem; line-height: 1.5; margin: -8px 0 12px; overflow-wrap: anywhere; }
+.home-review-note { color: var(--home-muted); font-size: .75rem; line-height: 1.45; margin: -6px 0 12px; overflow-wrap: anywhere; }
 .home-review-start > i { margin-left: auto; }
 .home-review-options { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
 .home-review-options .form-label { font-size: .8125rem; color: var(--home-muted); margin: 0; }

@@ -1566,6 +1566,18 @@ namespace LinguaReadApi.Data.Migrations
                     b.Property<int>("SrsMaxReviews")
                         .HasColumnType("integer");
 
+                    b.Property<string>("SrsNewCardOrder")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("recent_frequent");
+
+                    b.Property<bool>("SrsNewCardsIgnoreReviewLimit")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("SrsRelearningStepMinutes")
                         .IsRequired()
                         .HasMaxLength(100)

@@ -52,4 +52,56 @@ describe('SrsDueWidget', () => {
     rerender(<MemoryRouter><SrsDueWidget loading /></MemoryRouter>);
     expect(screen.getByRole('status')).toHaveTextContent('Loading reviews');
   });
+
+  test('renders today breakdown and review-limit pause note when provided', () => {
+    renderWidget({
+      count: 200,
+      reviewsToday: 200,
+      newToday: 0,
+      backlogNewCount: 2350,
+      deferredReviewsCount: 50,
+      newCardsPausedByReviewLimit: true,
+    });
+    expect(screen.getByText('200 due')).toBeVisible();
+    expect(screen.getByTestId('srs-due-breakdown')).toHaveTextContent(
+      '200 reviews today · 50 more reviews queued · 2,350 saved for later'
+    );
+    expect(screen.getByTestId('srs-review-limit-note')).toHaveTextContent(
+      "New cards paused while reviews fill today's limit."
+    );
+  });
+
+  test('lists learning cards separately from scheduled reviews in the breakdown', () => {
+    renderWidget({
+      count: 10,
+      learningToday: 2,
+      reviewsToday: 5,
+      newToday: 3,
+      backlogNewCount: 100,
+    });
+    expect(screen.getByTestId('srs-due-breakdown')).toHaveTextContent(
+      '2 learning · 5 reviews today · 3 new today · 100 saved for later'
+    );
+  });
+
+  test('explains deferred reviews and saved backlog when today count reaches zero', () => {
+    renderWidget({ count: 0, backlogNewCount: 120, deferredReviewsCount: 15 });
+    expect(screen.getByRole('heading', { name: 'No reviews due' })).toBeInTheDocument();
+    expect(screen.getByTestId('srs-due-backlog')).toHaveTextContent(
+      "Today's limit is complete. 15 more reviews and 120 saved words wait for future sessions."
+    );
+  });
+
+  test('explains review-limit pause in the zero-due state when untouched words remain', () => {
+    renderWidget({
+      count: 0,
+      backlogNewCount: 45,
+      deferredReviewsCount: 0,
+      newCardsPausedByReviewLimit: true,
+    });
+    expect(screen.getByRole('heading', { name: 'No reviews due' })).toBeInTheDocument();
+    expect(screen.getByTestId('srs-due-backlog')).toHaveTextContent(
+      "New cards paused while reviews fill today's limit. 45 saved words waiting for future sessions."
+    );
+  });
 });

@@ -118,4 +118,35 @@ describe('SettingsProvider', () => {
     await waitFor(() => expect(cached().readerTextAlignment).toBe('justify'));
     expect(screen.getByTestId('width')).toHaveTextContent('70');
   });
+
+  test('preserves srsMaxNewCards = 0, srsNewCardOrder, and srsNewCardsIgnoreReviewLimit across cache reload', async () => {
+    const SrsProbe = () => {
+      const { settings } = useContext(SettingsContext);
+      return (
+        <>
+          <span data-testid="srs-max-new">{settings.srsMaxNewCards}</span>
+          <span data-testid="srs-new-order">{settings.srsNewCardOrder}</span>
+          <span data-testid="srs-ignore-limit">{String(settings.srsNewCardsIgnoreReviewLimit)}</span>
+        </>
+      );
+    };
+    getUserSettings.mockResolvedValue({
+      srsMaxNewCards: 0,
+      srsNewCardOrder: 'frequent',
+      srsNewCardsIgnoreReviewLimit: true
+    });
+    const { unmount } = render(<SettingsProvider><SrsProbe /></SettingsProvider>);
+    await waitFor(() => {
+      expect(screen.getByTestId('srs-max-new')).toHaveTextContent('0');
+      expect(screen.getByTestId('srs-new-order')).toHaveTextContent('frequent');
+      expect(screen.getByTestId('srs-ignore-limit')).toHaveTextContent('true');
+    });
+    unmount();
+
+    getUserSettings.mockReturnValue(new Promise(() => {}));
+    render(<SettingsProvider><SrsProbe /></SettingsProvider>);
+    expect(screen.getByTestId('srs-max-new')).toHaveTextContent('0');
+    expect(screen.getByTestId('srs-new-order')).toHaveTextContent('frequent');
+    expect(screen.getByTestId('srs-ignore-limit')).toHaveTextContent('true');
+  });
 });

@@ -71,7 +71,7 @@ namespace LinguaReadApi.Services.Srs
         public const double MaxDesiredRetention = 0.97;
         public const double DefaultDesiredRetention = 0.9;
 
-        /// <summary>Daily caps when the user hasn't set one (old rows may hold 0).</summary>
+        /// <summary>Default daily caps when a user has no settings row yet.</summary>
         public const int DefaultMaxNewCards = 20;
         public const int DefaultMaxReviews = 200;
 

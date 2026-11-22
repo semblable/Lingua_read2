@@ -93,6 +93,8 @@ export type Settings = {
   srsMaxNewCards: number;
   srsMaxReviews: number;
   srsReviewOrder: string;
+  srsNewCardOrder: string;
+  srsNewCardsIgnoreReviewLimit: boolean;
   srsMaxIntervalDays: number;
   srsLapseMinimumIntervalDays: number;
   srsLearningStepMinutes: string;
@@ -187,6 +189,8 @@ const defaultSettings: Settings = {
   srsMaxNewCards: 20,
   srsMaxReviews: 200,
   srsReviewOrder: 'mix',
+  srsNewCardOrder: 'recent_frequent',
+  srsNewCardsIgnoreReviewLimit: false,
   srsMaxIntervalDays: 36500,
   srsLapseMinimumIntervalDays: 1,
   srsLearningStepMinutes: '1,10',
@@ -317,6 +321,9 @@ export const mergeSettings = (
     srsMaxNewCards: d.srsMaxNewCards ?? base.srsMaxNewCards,
     srsMaxReviews: d.srsMaxReviews ?? base.srsMaxReviews,
     srsReviewOrder: d.srsReviewOrder || base.srsReviewOrder,
+    srsNewCardOrder: d.srsNewCardOrder || base.srsNewCardOrder,
+    srsNewCardsIgnoreReviewLimit:
+      d.srsNewCardsIgnoreReviewLimit ?? base.srsNewCardsIgnoreReviewLimit,
     srsMaxIntervalDays: d.srsMaxIntervalDays ?? base.srsMaxIntervalDays,
     srsLapseMinimumIntervalDays:
       d.srsLapseMinimumIntervalDays ?? base.srsLapseMinimumIntervalDays,

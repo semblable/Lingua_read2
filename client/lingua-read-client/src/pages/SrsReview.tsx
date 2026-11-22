@@ -123,6 +123,8 @@ const SrsReview = () => {
     srsMaxNewCards: number | string;
     srsMaxReviews: number | string;
     srsReviewOrder: string;
+    srsNewCardOrder: string;
+    srsNewCardsIgnoreReviewLimit: boolean;
     srsLearningStepMinutes: string;
     srsMaxIntervalDays: number | string;
     srsLapseMinimumIntervalDays: number | string;
@@ -144,6 +146,8 @@ const SrsReview = () => {
     srsMaxNewCards: s?.srsMaxNewCards ?? 20,
     srsMaxReviews: s?.srsMaxReviews ?? 200,
     srsReviewOrder: s?.srsReviewOrder ?? 'mix',
+    srsNewCardOrder: s?.srsNewCardOrder ?? 'recent_frequent',
+    srsNewCardsIgnoreReviewLimit: s?.srsNewCardsIgnoreReviewLimit ?? false,
     srsLearningStepMinutes: s?.srsLearningStepMinutes ?? '1,10',
     srsMaxIntervalDays: s?.srsMaxIntervalDays ?? 36500,
     srsLapseMinimumIntervalDays: s?.srsLapseMinimumIntervalDays ?? 1,
@@ -164,103 +168,7 @@ const SrsReview = () => {
 
   const [prevSettings, setPrevSettings] = useState(settings);
   const [localSettings, setLocalSettings] = useState<SrsLocalSettings>(() => buildLocalSettings(settings));
-  if (prevSettings !== settings) {
-    setPrevSettings(settings);
-    setLocalSettings(buildLocalSettings(settings));
-  }
-
-  const handleSaveSettings = async () => {
-    const maxNew = parseInt(String(localSettings.srsMaxNewCards), 10);
-    const maxReviews = parseInt(String(localSettings.srsMaxReviews), 10);
-    if (isNaN(maxNew) || maxNew < 1) {
-      setError('Max new cards must be a positive number.');
-      return;
-    }
-    if (isNaN(maxReviews) || maxReviews < 1) {
-      setError('Max reviews must be a positive number.');
-      return;
-    }
-    const maxInterval = parseInt(String(localSettings.srsMaxIntervalDays), 10);
-    const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10);
-    if (isNaN(maxInterval) || maxInterval < 1) {
-      setError('Max interval must be at least 1 day.');
-      return;
-    }
-    if (isNaN(lapseMin) || lapseMin < 1) {
-      setError('Lapse minimum interval must be at least 1 day.');
-      return;
-    }
-    const desiredRetention = parseFloat(String(localSettings.srsDesiredRetention));
-    if (isNaN(desiredRetention) || desiredRetention < 0.7 || desiredRetention > 0.97) {
-      setError('Desired retention must be between 0.70 and 0.97.');
-      return;
-    }
-    const dayStartHour = parseInt(String(localSettings.srsDayStartHour), 10);
-    if (isNaN(dayStartHour) || dayStartHour < 0 || dayStartHour > 23) {
-      setError('The new day must start at an hour from 0 to 23.');
-      return;
-    }
-    const fsrsWeights = localSettings.srsFsrsWeights.trim();
-    const level3Days = parseInt(String(localSettings.srsStatusLevel3Days), 10);
-    const level4Days = parseInt(String(localSettings.srsStatusLevel4Days), 10);
-    const autoKnownDays = parseInt(String(localSettings.srsAutoKnownDays), 10) || 0;
-    if (isNaN(level3Days) || isNaN(level4Days) || level3Days < 1 || level4Days < level3Days
-        || (autoKnownDays > 0 && autoKnownDays < level4Days)) {
-      setError('Status thresholds must rise: level 3 <= level 4 <= Known (or Known set to 0 for never).');
-      return;
-    }
-    const leechThreshold = parseInt(String(localSettings.srsLeechThreshold), 10);
-    if (isNaN(leechThreshold) || leechThreshold < 0 || leechThreshold > 100) {
-      setError('Leech threshold must be between 0 (off) and 100.');
-      return;
-    }
-    try {
-      await updateUserSettings({
-        srsMaxNewCards: maxNew,
-        srsMaxReviews: maxReviews,
-        srsReviewOrder: localSettings.srsReviewOrder,
-        srsLearningStepMinutes: localSettings.srsLearningStepMinutes,
-        srsMaxIntervalDays: maxInterval,
-        srsLapseMinimumIntervalDays: lapseMin,
-        srsCardType: localSettings.srsCardType,
-        srsRelearningStepMinutes: localSettings.srsRelearningStepMinutes,
-        srsDesiredRetention: desiredRetention,
-        srsDayStartHour: dayStartHour,
-        srsFsrsWeights: fsrsWeights,
-        srsAutoCreateCards: localSettings.srsAutoCreateCards,
-        srsStatusSyncMode: localSettings.srsStatusSyncMode,
-        srsStatusLevel3Days: level3Days,
-        srsStatusLevel4Days: level4Days,
-        srsAutoKnownDays: autoKnownDays,
-        srsKnownCardAction: localSettings.srsKnownCardAction,
-        srsLeechThreshold: leechThreshold,
-        srsLeechAction: localSettings.srsLeechAction
-      });
-      updateSetting('srsMaxNewCards', maxNew);
-      updateSetting('srsMaxReviews', maxReviews);
-      updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
-      updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
-      updateSetting('srsMaxIntervalDays', maxInterval);
-      updateSetting('srsLapseMinimumIntervalDays', lapseMin);
-      updateSetting('srsCardType', localSettings.srsCardType);
-      updateSetting('srsRelearningStepMinutes', localSettings.srsRelearningStepMinutes);
-      updateSetting('srsDesiredRetention', desiredRetention);
-      updateSetting('srsDayStartHour', dayStartHour);
-      updateSetting('srsFsrsWeights', fsrsWeights || null);
-      updateSetting('srsAutoCreateCards', localSettings.srsAutoCreateCards);
-      updateSetting('srsStatusSyncMode', localSettings.srsStatusSyncMode);
-      updateSetting('srsStatusLevel3Days', level3Days);
-      updateSetting('srsStatusLevel4Days', level4Days);
-      updateSetting('srsAutoKnownDays', autoKnownDays);
-      updateSetting('srsKnownCardAction', localSettings.srsKnownCardAction);
-      updateSetting('srsLeechThreshold', leechThreshold);
-      updateSetting('srsLeechAction', localSettings.srsLeechAction);
-      setShowSettingsModal(false);
-      loadStats(); // refresh visual stats
-    } catch (err: unknown) {
-      setError(`Failed to save settings: ${(err as Error)?.message}`);
-    }
-  };
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   // Session state. The queue holds the cards still to come (including learning
   // cards that come back within the session); currentCard has been taken out of it.
@@ -292,6 +200,11 @@ const SrsReview = () => {
   const [undoVisible, setUndoVisible] = useState(false);
   const [undoTimer, setUndoTimer] = useState(0);
 
+  if (prevSettings !== settings) {
+    setPrevSettings(settings);
+    setLocalSettings(buildLocalSettings(settings));
+  }
+
   // Load stats when language changes
   const loadStats = useCallback(async () => {
     if (!selectedLanguage) return;
@@ -317,6 +230,116 @@ const SrsReview = () => {
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  const openSettingsModal = () => {
+    setLocalSettings(buildLocalSettings(settings));
+    setSettingsError(null);
+    setShowSettingsModal(true);
+  };
+
+  const closeSettingsModal = () => {
+    setLocalSettings(buildLocalSettings(settings));
+    setSettingsError(null);
+    setShowSettingsModal(false);
+  };
+
+  const handleSaveSettings = async () => {
+    const maxNew = parseInt(String(localSettings.srsMaxNewCards), 10);
+    const maxReviews = parseInt(String(localSettings.srsMaxReviews), 10);
+    if (isNaN(maxNew) || maxNew < 0 || maxNew > 9999) {
+      setSettingsError('Max new cards must be between 0 and 9999.');
+      return;
+    }
+    if (isNaN(maxReviews) || maxReviews < 1 || maxReviews > 9999) {
+      setSettingsError('Max reviews must be between 1 and 9999.');
+      return;
+    }
+    const maxInterval = parseInt(String(localSettings.srsMaxIntervalDays), 10);
+    const lapseMin = parseInt(String(localSettings.srsLapseMinimumIntervalDays), 10);
+    if (isNaN(maxInterval) || maxInterval < 1) {
+      setSettingsError('Max interval must be at least 1 day.');
+      return;
+    }
+    if (isNaN(lapseMin) || lapseMin < 1) {
+      setSettingsError('Lapse minimum interval must be at least 1 day.');
+      return;
+    }
+    const desiredRetention = parseFloat(String(localSettings.srsDesiredRetention));
+    if (isNaN(desiredRetention) || desiredRetention < 0.7 || desiredRetention > 0.97) {
+      setSettingsError('Desired retention must be between 0.70 and 0.97.');
+      return;
+    }
+    const dayStartHour = parseInt(String(localSettings.srsDayStartHour), 10);
+    if (isNaN(dayStartHour) || dayStartHour < 0 || dayStartHour > 23) {
+      setSettingsError('The new day must start at an hour from 0 to 23.');
+      return;
+    }
+    const fsrsWeights = localSettings.srsFsrsWeights.trim();
+    const level3Days = parseInt(String(localSettings.srsStatusLevel3Days), 10);
+    const level4Days = parseInt(String(localSettings.srsStatusLevel4Days), 10);
+    const autoKnownDays = parseInt(String(localSettings.srsAutoKnownDays), 10) || 0;
+    if (isNaN(level3Days) || isNaN(level4Days) || level3Days < 1 || level4Days < level3Days
+        || (autoKnownDays > 0 && autoKnownDays < level4Days)) {
+      setSettingsError('Status thresholds must rise: level 3 <= level 4 <= Known (or Known set to 0 for never).');
+      return;
+    }
+    const leechThreshold = parseInt(String(localSettings.srsLeechThreshold), 10);
+    if (isNaN(leechThreshold) || leechThreshold < 0 || leechThreshold > 100) {
+      setSettingsError('Leech threshold must be between 0 (off) and 100.');
+      return;
+    }
+    try {
+      setSettingsError(null);
+      await updateUserSettings({
+        srsMaxNewCards: maxNew,
+        srsMaxReviews: maxReviews,
+        srsReviewOrder: localSettings.srsReviewOrder,
+        srsNewCardOrder: localSettings.srsNewCardOrder,
+        srsNewCardsIgnoreReviewLimit: localSettings.srsNewCardsIgnoreReviewLimit,
+        srsLearningStepMinutes: localSettings.srsLearningStepMinutes,
+        srsMaxIntervalDays: maxInterval,
+        srsLapseMinimumIntervalDays: lapseMin,
+        srsCardType: localSettings.srsCardType,
+        srsRelearningStepMinutes: localSettings.srsRelearningStepMinutes,
+        srsDesiredRetention: desiredRetention,
+        srsDayStartHour: dayStartHour,
+        srsFsrsWeights: fsrsWeights,
+        srsAutoCreateCards: localSettings.srsAutoCreateCards,
+        srsStatusSyncMode: localSettings.srsStatusSyncMode,
+        srsStatusLevel3Days: level3Days,
+        srsStatusLevel4Days: level4Days,
+        srsAutoKnownDays: autoKnownDays,
+        srsKnownCardAction: localSettings.srsKnownCardAction,
+        srsLeechThreshold: leechThreshold,
+        srsLeechAction: localSettings.srsLeechAction
+      });
+      updateSetting('srsMaxNewCards', maxNew);
+      updateSetting('srsMaxReviews', maxReviews);
+      updateSetting('srsReviewOrder', localSettings.srsReviewOrder);
+      updateSetting('srsNewCardOrder', localSettings.srsNewCardOrder);
+      updateSetting('srsNewCardsIgnoreReviewLimit', localSettings.srsNewCardsIgnoreReviewLimit);
+      updateSetting('srsLearningStepMinutes', localSettings.srsLearningStepMinutes);
+      updateSetting('srsMaxIntervalDays', maxInterval);
+      updateSetting('srsLapseMinimumIntervalDays', lapseMin);
+      updateSetting('srsCardType', localSettings.srsCardType);
+      updateSetting('srsRelearningStepMinutes', localSettings.srsRelearningStepMinutes);
+      updateSetting('srsDesiredRetention', desiredRetention);
+      updateSetting('srsDayStartHour', dayStartHour);
+      updateSetting('srsFsrsWeights', fsrsWeights || null);
+      updateSetting('srsAutoCreateCards', localSettings.srsAutoCreateCards);
+      updateSetting('srsStatusSyncMode', localSettings.srsStatusSyncMode);
+      updateSetting('srsStatusLevel3Days', level3Days);
+      updateSetting('srsStatusLevel4Days', level4Days);
+      updateSetting('srsAutoKnownDays', autoKnownDays);
+      updateSetting('srsKnownCardAction', localSettings.srsKnownCardAction);
+      updateSetting('srsLeechThreshold', leechThreshold);
+      updateSetting('srsLeechAction', localSettings.srsLeechAction);
+      setShowSettingsModal(false);
+      loadStats(); // refresh visual stats
+    } catch (err: unknown) {
+      setSettingsError(`Failed to save settings: ${(err as Error)?.message}`);
+    }
+  };
 
   // Shows the next card from `q`, or ends the session when there is none.
   const advance = useCallback((q: SessionQueue<DueCard>) => {
@@ -348,13 +371,15 @@ const SrsReview = () => {
         limit: sessionLimit
       });
       setSessionStarted(true);
-      advance(createSessionQueue(data ?? [], learningDueAt, Date.now()));
+      if (!advance(createSessionQueue(data ?? [], learningDueAt, Date.now()))) {
+        loadStats();
+      }
     } catch (err: unknown) {
       setError(`Failed to load cards: ${(err as Error)?.message}`);
     } finally {
       setLoading(false);
     }
-  }, [selectedLanguage, statusFilter, onlyOneTarget, advance, sessionComplete, sessionLimit]);
+  }, [selectedLanguage, statusFilter, onlyOneTarget, advance, loadStats, sessionComplete, sessionLimit]);
 
   // The due cards are all in the selected language; its substitutions are part of
   // how terms are keyed, so sentence matching needs them too.
@@ -669,29 +694,40 @@ const SrsReview = () => {
               </div>
               <Row className="text-center g-2 mb-3">
                 <Col>
-                  <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
-                  <div className="srs-stat-label">Due{stats.reviewableCount != null && stats.reviewableCount < (stats.dueCount ?? 0) ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                  <div className="srs-stat-value text-danger">{(stats.reviewableCount ?? stats.dueCount ?? 0).toLocaleString()}</div>
+                  <div className="srs-stat-label">
+                    Due
+                    {stats.dueReviewCount != null && stats.reviewableReviewCount != null && stats.dueReviewCount > stats.reviewableReviewCount ? (
+                      <small className="text-muted"> (+{(stats.dueReviewCount - stats.reviewableReviewCount).toLocaleString()} queued)</small>
+                    ) : ''}
+                  </div>
                 </Col>
-                <Col><div className="srs-stat-value text-info">{stats.newCards}</div><div className="srs-stat-label">New</div></Col>
-                <Col><div className="srs-stat-value text-warning">{stats.learningCards}</div><div className="srs-stat-label">Learning</div></Col>
-                <Col><div className="srs-stat-value text-primary">{stats.youngCards}</div><div className="srs-stat-label">Young</div></Col>
-                <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
-                <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
+                <Col><div className="srs-stat-value text-info">{(stats.newCards ?? 0).toLocaleString()}</div><div className="srs-stat-label">New</div></Col>
+                <Col><div className="srs-stat-value text-warning">{(stats.learningCards ?? 0).toLocaleString()}</div><div className="srs-stat-label">Learning</div></Col>
+                <Col><div className="srs-stat-value text-primary">{(stats.youngCards ?? 0).toLocaleString()}</div><div className="srs-stat-label">Young</div></Col>
+                <Col><div className="srs-stat-value text-success">{(stats.matureCards ?? 0).toLocaleString()}</div><div className="srs-stat-label">Mature</div></Col>
+                <Col><div className="srs-stat-value">{(stats.reviewedToday ?? 0).toLocaleString()}</div><div className="srs-stat-label">Today</div></Col>
               </Row>
               <div className="border-top pt-2">
                 <Row className="text-center g-2">
                   <Col>
                     <ProgressBar
-                      now={(stats.maxNewCards ?? 0) > 0 ? ((stats.studiedNewCardsToday ?? 0) / (stats.maxNewCards ?? 1)) * 100 : 0}
+                      now={(stats.maxNewCards ?? 0) > 0
+                        ? Math.min(100, ((stats.studiedNewCardsToday ?? 0) / (stats.maxNewCards ?? 1)) * 100)
+                        : ((stats.studiedNewCardsToday ?? 0) > 0 ? 100 : 0)}
                       variant="info"
                       style={{ height: '4px' }}
                       className="mb-1"
                     />
-                    <small className="text-muted">{stats.studiedNewCardsToday}/{stats.maxNewCards} new</small>
+                    <small className="text-muted">
+                      {stats.studiedNewCardsToday}/{stats.maxNewCards} new{stats.maxNewCards === 0 ? ' (paused)' : ''}
+                    </small>
                   </Col>
                   <Col>
                     <ProgressBar
-                      now={(stats.maxReviews ?? 0) > 0 ? ((stats.studiedReviewsToday ?? 0) / (stats.maxReviews ?? 1)) * 100 : 0}
+                      now={(stats.maxReviews ?? 0) > 0
+                        ? Math.min(100, ((stats.studiedReviewsToday ?? 0) / (stats.maxReviews ?? 1)) * 100)
+                        : 0}
                       variant="primary"
                       style={{ height: '4px' }}
                       className="mb-1"
@@ -699,6 +735,13 @@ const SrsReview = () => {
                     <small className="text-muted">{stats.studiedReviewsToday}/{stats.maxReviews} reviews</small>
                   </Col>
                 </Row>
+                {stats.newCardsPausedByReviewLimit && (
+                  <div className="text-center mt-1">
+                    <small className="text-muted" data-testid="srs-review-limit-paused-notice">
+                      New cards paused today while scheduled reviews fill your daily limit.
+                    </small>
+                  </div>
+                )}
               </div>
             </Card.Body>
           </Card>
@@ -955,7 +998,7 @@ const SrsReview = () => {
               <Button
                 variant="outline-secondary"
                 size="lg"
-                onClick={() => setShowSettingsModal(true)}
+                onClick={openSettingsModal}
                 title="Deck Options"
               >
                 ⚙️ Options
@@ -963,33 +1006,52 @@ const SrsReview = () => {
             </div>
           </Card.Body>
         </Card>
-        {error && <Alert variant="danger" className="mt-3">{error}</Alert>}
+        {error && <Alert variant="danger" className="mt-3" dismissible onClose={() => setError(null)}>{error}</Alert>}
 
         {/* Settings Modal */}
-        <Modal show={showSettingsModal} onHide={() => setShowSettingsModal(false)} centered>
+        <Modal show={showSettingsModal} onHide={closeSettingsModal} centered>
           <Modal.Header closeButton>
             <Modal.Title>SRS Options</Modal.Title>
           </Modal.Header>
           <Modal.Body>
-            <Form.Group className="mb-3">
+            {settingsError && (
+              <Alert variant="danger" className="mb-3" dismissible onClose={() => setSettingsError(null)}>
+                {settingsError}
+              </Alert>
+            )}
+            <Form.Group className="mb-3" controlId="srs-max-new-cards">
               <Form.Label>Maximum New Cards / Day</Form.Label>
               <Form.Control
                 type="number"
                 min="0"
+                max="9999"
                 value={localSettings.srsMaxNewCards}
                 onChange={e => setLocalSettings(p => ({ ...p, srsMaxNewCards: e.target.value }))}
               />
+              <Form.Text className="text-muted">Set to 0 to pause new cards while catching up on reviews.</Form.Text>
             </Form.Group>
-            <Form.Group className="mb-3">
+            <Form.Group className="mb-3" controlId="srs-max-reviews">
               <Form.Label>Maximum Reviews / Day</Form.Label>
               <Form.Control
                 type="number"
-                min="0"
+                min="1"
+                max="9999"
                 value={localSettings.srsMaxReviews}
                 onChange={e => setLocalSettings(p => ({ ...p, srsMaxReviews: e.target.value }))}
               />
             </Form.Group>
-            <Form.Group className="mb-3">
+            <Form.Group className="mb-3" controlId="srs-new-cards-ignore-review-limit">
+              <Form.Check
+                type="switch"
+                label="New cards ignore review limit"
+                checked={localSettings.srsNewCardsIgnoreReviewLimit}
+                onChange={e => setLocalSettings(p => ({ ...p, srsNewCardsIgnoreReviewLimit: e.target.checked }))}
+              />
+              <Form.Text className="text-muted">
+                Off by default (like Anki): scheduled reviews have first claim on your daily review limit, reducing or pausing new cards when reviews fill it.
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="srs-review-order">
               <Form.Label>Review Order</Form.Label>
               <Form.Select
                 value={localSettings.srsReviewOrder}
@@ -999,6 +1061,21 @@ const SrsReview = () => {
                 <option value="new_first">Show new cards before reviews</option>
                 <option value="reviews_first">Show reviews before new cards</option>
               </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3" controlId="srs-new-card-order">
+              <Form.Label>New Card Order</Form.Label>
+              <Form.Select
+                value={localSettings.srsNewCardOrder}
+                onChange={e => setLocalSettings(p => ({ ...p, srsNewCardOrder: e.target.value }))}
+              >
+                <option value="recent_frequent">Frequent in recent reading (recommended)</option>
+                <option value="frequent">Most frequent overall</option>
+                <option value="newest">Most recently seen first</option>
+                <option value="oldest">Oldest added first</option>
+              </Form.Select>
+              <Form.Text className="text-muted">
+                Chooses which untouched words enter study first when you have a backlog.
+              </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Learning Steps (minutes, comma-separated)</Form.Label>
@@ -1207,7 +1284,7 @@ const SrsReview = () => {
             </details>
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={closeSettingsModal}>Cancel</Button>
             <Button variant="primary" onClick={handleSaveSettings}>Save Changes</Button>
           </Modal.Footer>
         </Modal>
@@ -1217,6 +1294,20 @@ const SrsReview = () => {
 
   // Session Complete Screen
   if (sessionComplete) {
+    const remainingDueToday = stats ? (stats.reviewableCount ?? stats.dueCount ?? 0) : 0;
+    const hasFilterActive = onlyOneTarget || statusFilter.length < 5;
+    const hasUntouchedNew = (stats?.dueNewCount ?? stats?.newCards ?? 0) > 0;
+    const hasDeferredReviews = stats?.dueReviewCount != null && stats?.reviewableReviewCount != null
+      ? stats.dueReviewCount > stats.reviewableReviewCount
+      : (stats?.dueReviewCount ?? 1) > 0;
+    const showNewPaused = stats != null && (stats.maxNewCards ?? 0) === 0 && hasUntouchedNew;
+    const showNewPausedByReviewLimit = stats?.newCardsPausedByReviewLimit === true;
+    const showNewLimitReached = stats != null && !showNewPaused && !showNewPausedByReviewLimit
+      && (stats.maxNewCards ?? 0) > 0 && hasUntouchedNew
+      && (stats.studiedNewCardsToday ?? 0) >= (stats.maxNewCards ?? 0);
+    const showReviewLimitReached = stats != null && (stats.maxReviews ?? 0) > 0 && hasDeferredReviews
+      && (stats.studiedReviewsToday ?? 0) >= (stats.maxReviews ?? 0);
+
     return (
       <Container className="mt-4" style={{ maxWidth: '600px' }}>
         <Card className="srs-complete-card text-center">
@@ -1226,22 +1317,34 @@ const SrsReview = () => {
             <p className="text-muted mb-4">
               You reviewed <strong>{reviewedCount}</strong> card{reviewedCount !== 1 ? 's' : ''}
             </p>
+            {reviewedCount === 0 && hasFilterActive && remainingDueToday > 0 && (
+              <Alert variant="secondary" className="mb-3 text-start py-2 small">
+                No due cards matched your active session filters ({[onlyOneTarget && '1T Only', statusFilter.length < 5 && 'word status filter'].filter(Boolean).join(', ')}).
+              </Alert>
+            )}
 
             {stats && (
               <>
                 <Row className="text-center mb-3 g-3">
                   <Col>
-                    <div className="srs-stat-value text-danger">{stats.reviewableCount ?? stats.dueCount}</div>
-                    <div className="srs-stat-label">Still Due{stats.reviewableCount != null && stats.reviewableCount < (stats.dueCount ?? 0) ? <small className="text-muted"> ({stats.dueCount} total)</small> : ''}</div>
+                    <div className="srs-stat-value text-danger">{remainingDueToday.toLocaleString()}</div>
+                    <div className="srs-stat-label">
+                      Still Due
+                      {stats.dueReviewCount != null && stats.reviewableReviewCount != null && stats.dueReviewCount > stats.reviewableReviewCount ? (
+                        <small className="text-muted"> (+{(stats.dueReviewCount - stats.reviewableReviewCount).toLocaleString()} queued)</small>
+                      ) : ''}
+                    </div>
                   </Col>
-                  <Col><div className="srs-stat-value">{stats.reviewedToday}</div><div className="srs-stat-label">Today</div></Col>
-                  <Col><div className="srs-stat-value text-success">{stats.matureCards}</div><div className="srs-stat-label">Mature</div></Col>
+                  <Col><div className="srs-stat-value">{(stats.reviewedToday ?? 0).toLocaleString()}</div><div className="srs-stat-label">Today</div></Col>
+                  <Col><div className="srs-stat-value text-success">{(stats.matureCards ?? 0).toLocaleString()}</div><div className="srs-stat-label">Mature</div></Col>
                 </Row>
-                {(stats.dueCount ?? 0) > 0 && (stats.reviewableCount ?? stats.dueCount ?? 0) === 0 && (
-                  <Alert variant="info" className="mb-4 text-start py-2 small">
-                    {(stats.studiedNewCardsToday ?? 0) >= (stats.maxNewCards ?? 0) && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
-                    {(stats.studiedReviewsToday ?? 0) >= (stats.maxReviews ?? 0) && <div>Review limit reached ({stats.maxReviews}/day)</div>}
-                    <div className="text-muted mt-1">Adjust limits in settings to review more.</div>
+                {(stats.dueCount ?? 0) > 0 && remainingDueToday === 0 && (showNewPaused || showNewPausedByReviewLimit || showNewLimitReached || showReviewLimitReached) && (
+                  <Alert variant="info" className="mb-4 text-start py-2 small" data-testid="srs-limit-reached-alert">
+                    {showNewPaused && <div>New cards paused (0/day)</div>}
+                    {showNewPausedByReviewLimit && <div>New cards paused today while scheduled reviews fill your daily limit</div>}
+                    {showNewLimitReached && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
+                    {showReviewLimitReached && <div>Review limit reached ({stats.maxReviews}/day)</div>}
+                    <div className="text-muted mt-1">Adjust limits in SRS Options to review more.</div>
                   </Alert>
                 )}
               </>
@@ -1253,7 +1356,7 @@ const SrsReview = () => {
                   ↩ Undo last ({undoTimer}s)
                 </Button>
               )}
-              <Button variant="primary" onClick={startSession}>
+              <Button variant="primary" onClick={startSession} disabled={stats != null && remainingDueToday === 0}>
                 Review More
               </Button>
               <Button variant="outline-secondary" onClick={() => {
@@ -1313,11 +1416,13 @@ const SrsReview = () => {
             {/* Card Header */}
             <div className="d-flex justify-content-between align-items-center mb-2">
               <div className="d-flex align-items-center gap-1">
-                <Badge bg={STATUS_VARIANTS[currentCard.wordStatus as WordStatus]}>
+                <Badge bg={STATUS_VARIANTS[currentCard.wordStatus as WordStatus]} title="Word status">
                   {STATUS_LABELS[currentCard.wordStatus as WordStatus]}
                 </Badge>
-                {currentCard.isLearning && (
-                  <Badge bg="warning" text="dark">📖 Learning</Badge>
+                {currentCard.isLearning ? (
+                  <Badge bg="warning" text="dark" title="Card currently in learning steps">📖 Learning</Badge>
+                ) : !currentCard.hasEverGraduated && (currentCard.repetitions ?? 0) === 0 && (
+                  <Badge bg="info" text="dark" title="First time reviewing this card">New card</Badge>
                 )}
                 {(currentCard.flag ?? 0) > 0 && (
                   <span title={`Flag: ${FLAG_LABELS[currentCard.flag!]}`}>{FLAG_COLORS[currentCard.flag!]}</span>

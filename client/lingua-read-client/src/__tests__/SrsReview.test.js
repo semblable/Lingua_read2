@@ -5,6 +5,8 @@ import SrsReview from '../pages/SrsReview';
 import {
   getAllLanguages,
   getSrsStats,
+  getSrsDeckSettings,
+  updateSrsDeckSettings,
   getSrsDueCards,
   submitSrsReview,
   undoSrsReview,
@@ -25,6 +27,8 @@ import '@testing-library/jest-dom';
 vi.mock('../utils/api', () => ({
   getAllLanguages: vi.fn(),
   getSrsStats: vi.fn(),
+  getSrsDeckSettings: vi.fn(),
+  updateSrsDeckSettings: vi.fn(),
   getSrsDueCards: vi.fn(),
   submitSrsReview: vi.fn(),
   undoSrsReview: vi.fn(),
@@ -450,6 +454,48 @@ describe('SrsReview', () => {
     });
   });
 
+  it('saves a deck limit and a today-only override independently for the selected language', async () => {
+    const defaults = { defaultMaxNewCards: 20, defaultMaxReviews: 100, studyDay: '2026-11-22' };
+    getSrsDeckSettings
+      .mockResolvedValueOnce(defaults)
+      .mockResolvedValueOnce({ ...defaults, maxNewCards: 5, todayMaxNewCards: 0, newCardsIgnoreReviewLimit: false });
+    updateSrsDeckSettings.mockResolvedValue(defaults);
+    renderComponent();
+
+    await screen.findByRole('option', { name: 'French' });
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Deck limits' }));
+    const dialog = await screen.findByRole('dialog', { name: 'French deck limits' });
+    const newLimits = within(await within(dialog).findByRole('group', { name: 'New cards/day' }));
+    expect(newLimits.getByLabelText('Deck limit')).toHaveAttribute('placeholder', '20');
+    fireEvent.change(newLimits.getByLabelText('Deck limit'), { target: { value: '5' } });
+    fireEvent.change(newLimits.getByLabelText('Today only'), { target: { value: '0' } });
+    fireEvent.change(within(dialog).getByLabelText('New cards ignore review limit'), { target: { value: 'false' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save deck limits' }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(getSrsDeckSettings).toHaveBeenCalledWith(2);
+    const values = {
+      studyDay: '2026-11-22', maxNewCards: 5, todayMaxNewCards: 0,
+      maxReviews: null, todayMaxReviews: null, newCardsIgnoreReviewLimit: false,
+    };
+    expect(updateSrsDeckSettings).toHaveBeenLastCalledWith(2, values);
+    expect(getSrsStats.mock.calls.filter(([id]) => id === '2')).toHaveLength(2);
+    expect(updateUserSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deck limits' }));
+    const reopened = within(await screen.findByRole('dialog', { name: 'French deck limits' }));
+    const reopenedNewLimits = within(await reopened.findByRole('group', { name: 'New cards/day' }));
+    expect(reopenedNewLimits.getByLabelText('Deck limit')).toHaveValue(5);
+    expect(reopenedNewLimits.getByLabelText('Today only')).toHaveValue(0);
+    fireEvent.change(reopenedNewLimits.getByLabelText('Deck limit'), { target: { value: '' } });
+    fireEvent.change(reopenedNewLimits.getByLabelText('Today only'), { target: { value: '' } });
+    fireEvent.click(reopened.getByRole('button', { name: 'Save deck limits' }));
+    await waitFor(() => expect(updateSrsDeckSettings).toHaveBeenLastCalledWith(2, {
+      ...values, maxNewCards: null, todayMaxNewCards: null,
+    }));
+  });
+
   it('discards dirty edits and clears modal validation errors when cancelling Options', async () => {
     renderComponent();
     await selectSpanish();
@@ -531,7 +577,7 @@ describe('SrsReview', () => {
     expect(await screen.findByText('Session Complete')).toBeInTheDocument();
     const alert = screen.getByTestId('srs-limit-reached-alert');
     expect(alert).toHaveTextContent('Review limit reached (100/day)');
-    expect(alert).toHaveTextContent('Adjust limits in SRS Options to review more.');
+    expect(alert).toHaveTextContent('Open Deck limits from setup');
     expect(alert).not.toHaveTextContent('New card limit reached');
     expect(alert).not.toHaveTextContent('New cards paused (0/day)');
     expect(screen.getByRole('button', { name: /Review More/i })).toBeDisabled();

@@ -631,6 +631,77 @@ namespace LinguaReadApi.Data.Migrations
                     b.ToTable("SrsCardReviews");
                 });
 
+            modelBuilder.Entity("LinguaReadApi.Models.SrsDeckSettings", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("LanguageId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxNewCards")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("MaxReviews")
+                        .HasColumnType("integer");
+
+                    b.Property<bool?>("NewCardsIgnoreReviewLimit")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("TodayExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("TodayMaxNewCards")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("TodayMaxReviews")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("TodayStudyDay")
+                        .HasColumnType("date");
+
+                    b.HasKey("UserId", "LanguageId");
+
+                    b.HasIndex("LanguageId");
+
+                    b.ToTable("SrsDeckSettings");
+                });
+
+            modelBuilder.Entity("LinguaReadApi.Models.SrsDeckStudyEntry", b =>
+                {
+                    b.Property<long>("SrsDeckStudyEntryId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("SrsDeckStudyEntryId"));
+
+                    b.Property<bool>("IsNewCard")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("LanguageId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("SrsReviewLogId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly>("StudyDay")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("SrsDeckStudyEntryId");
+
+                    b.HasIndex("LanguageId");
+
+                    b.HasIndex("SrsReviewLogId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "StudyDay", "LanguageId");
+
+                    b.ToTable("SrsDeckStudyEntries");
+                });
+
             modelBuilder.Entity("LinguaReadApi.Models.SrsPhrase", b =>
                 {
                     b.Property<int>("SrsPhraseId")
@@ -726,6 +797,9 @@ namespace LinguaReadApi.Data.Migrations
 
                     b.Property<int>("SrsCardReviewId")
                         .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("StudyDay")
+                        .HasColumnType("date");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
@@ -1882,6 +1956,43 @@ namespace LinguaReadApi.Data.Migrations
                     b.Navigation("Word");
                 });
 
+            modelBuilder.Entity("LinguaReadApi.Models.SrsDeckSettings", b =>
+                {
+                    b.HasOne("LinguaReadApi.Models.Language", null)
+                        .WithMany()
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LinguaReadApi.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LinguaReadApi.Models.SrsDeckStudyEntry", b =>
+                {
+                    b.HasOne("LinguaReadApi.Models.Language", null)
+                        .WithMany()
+                        .HasForeignKey("LanguageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LinguaReadApi.Models.SrsReviewLog", "ReviewLog")
+                        .WithOne("DeckStudyEntry")
+                        .HasForeignKey("LinguaReadApi.Models.SrsDeckStudyEntry", "SrsReviewLogId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LinguaReadApi.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ReviewLog");
+                });
+
             modelBuilder.Entity("LinguaReadApi.Models.SrsPhrase", b =>
                 {
                     b.HasOne("LinguaReadApi.Models.Text", "Text")
@@ -2209,6 +2320,11 @@ namespace LinguaReadApi.Data.Migrations
                     b.Navigation("Texts");
 
                     b.Navigation("Words");
+                });
+
+            modelBuilder.Entity("LinguaReadApi.Models.SrsReviewLog", b =>
+                {
+                    b.Navigation("DeckStudyEntry");
                 });
 
             modelBuilder.Entity("LinguaReadApi.Models.Tag", b =>

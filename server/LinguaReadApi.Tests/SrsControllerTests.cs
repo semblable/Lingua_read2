@@ -156,7 +156,7 @@ public class SrsControllerTests
         var savedWord = await context.Words.Include(w => w.Translation).SingleAsync(w => w.WordId == 1);
         Assert.Equal(2, savedWord.Status);
         Assert.Equal("new definition", savedWord.Translation.Translation);
-        Assert.Equal(undo ? 0 : 1, (await context.UserSettings.SingleAsync()).SrsDailyNewCardsStudied);
+        Assert.Equal(undo ? 0 : 1, (await controller.GetStats(languageId: 1)).Value!.StudiedNewCardsToday);
         Assert.Equal(2, writer.SaveAttempts);
     }
 

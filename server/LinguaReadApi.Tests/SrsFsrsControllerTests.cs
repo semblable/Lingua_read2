@@ -120,9 +120,9 @@ public class SrsFsrsControllerTests
         Assert.Equal(4, result.NextIntervals.Count);
         Assert.True(result.IsLearning);
 
-        var settings = context.UserSettings.AsNoTracking().Single();
-        Assert.Equal(1, settings.SrsDailyNewCardsStudied);
-        Assert.Equal(1, settings.SrsCurrentStreak);
+        var stats = Unwrap(await CreateController(context, userId).GetStats(languageId: 1));
+        Assert.Equal(1, stats.StudiedNewCardsToday);
+        Assert.Equal(1, stats.CurrentStreak);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public class SrsFsrsControllerTests
         Assert.Equal(first.NextReviewAt, second.NextReviewAt);
         Assert.Single(context.SrsReviewLogs.AsNoTracking());
         Assert.Equal(5, Reload(context, cardId).Repetitions);
-        Assert.Equal(1, context.UserSettings.AsNoTracking().Single().SrsDailyReviewsStudied);
+        Assert.Equal(1, Unwrap(await CreateController(context, userId).GetStats(languageId: 1)).StudiedReviewsToday);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public class SrsFsrsControllerTests
         Assert.Equal(10, card.Interval);
         Assert.False(card.IsLearning);
         Assert.Empty(context.SrsReviewLogs.AsNoTracking());
-        Assert.Equal(0, context.UserSettings.AsNoTracking().Single().SrsDailyReviewsStudied);
+        Assert.Equal(0, Unwrap(await controller.GetStats(languageId: 1)).StudiedReviewsToday);
     }
 
     [Fact]
@@ -340,9 +340,9 @@ public class SrsFsrsControllerTests
         var log = context.SrsReviewLogs.AsNoTracking().Single();
         Assert.Equal((int)SrsReviewKind.Reading, log.Kind);
         Assert.Equal(Good, log.Grade);
-        var settings = context.UserSettings.AsNoTracking().Single();
-        Assert.Equal(0, settings.SrsDailyReviewsStudied);
-        Assert.Equal(0, settings.SrsCurrentStreak);
+        var stats = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal(0, stats.StudiedReviewsToday);
+        Assert.Equal(0, stats.CurrentStreak);
         Assert.True(Reload(context, cardId).Interval >= 10);
     }
 

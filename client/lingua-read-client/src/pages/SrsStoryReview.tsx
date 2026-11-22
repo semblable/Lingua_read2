@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { getAllLanguages, generateSrsStory, submitSrsReview, getSrsStats, createWord, getWordsByLanguage, getSrsStories } from '../utils/api';
 import { SettingsContext } from '../contexts/SettingsContext';
 import WordLookupPopover, { type ExistingWord } from '../components/WordLookupPopover';
+import SrsDeckOptions from '../components/srs/SrsDeckOptions';
 import type { Language } from '../utils/api/languages';
 import type { SrsStats, SrsStories, SrsStoryGenerationResult } from '../utils/api/srs';
 import {
@@ -36,10 +37,7 @@ const SrsStoryReview = () => {
   );
   const [statusFilter, setStatusFilter] = useState<number[]>([1, 2, 3, 4, 5]);
   const [cardType, setCardType] = useState('all');
-  // Default to the user's daily new-card cap when active, or 15 when new cards are paused (0/day).
-  const [maxWords, setMaxWords] = useState(() =>
-    (settings.srsMaxNewCards ?? 0) > 0 ? Math.min(30, Math.max(3, settings.srsMaxNewCards)) : 15
-  );
+  const [maxWordsOverride, setMaxWordsOverride] = useState<number | null>(null);
 
   // Session state
   const [phase, setPhase] = useState('setup'); // setup | loading | review | complete
@@ -49,6 +47,9 @@ const SrsStoryReview = () => {
   const [revealedWords, setRevealedWords] = useState<Set<number>>(new Set()); // wordIds whose translation is unhidden
   const [error, setError] = useState('');
   const [stats, setStats] = useState<SrsStats | null>(null);
+  const statsRequest = useRef(0);
+  const maxNew = stats?.maxNewCards ?? settings.srsMaxNewCards ?? 0;
+  const maxWords = maxWordsOverride ?? (maxNew > 0 ? Math.min(30, Math.max(3, maxNew)) : 15);
   const [pastStories, setPastStories] = useState<PastStory[]>([]);
   const [gradingWordId, setGradingWordId] = useState<number | null>(null);
 
@@ -74,38 +75,31 @@ const SrsStoryReview = () => {
     })();
   }, []);
 
-  const loadStats = useCallback(async () => {
+  const loadStats = useCallback(() => {
     if (!selectedLanguage) return;
-    try {
-      setStats(await getSrsStats(selectedLanguage));
-      setPastStories(await getSrsStories(selectedLanguage));
-    } catch (err) {
+    const request = statsRequest.current + 1;
+    statsRequest.current = request;
+    Promise.all([getSrsStats(selectedLanguage), getSrsStories(selectedLanguage)]).then(([nextStats, stories]) => {
+      if (request !== statsRequest.current) return;
+      setStats(nextStats);
+      setPastStories(stories);
+    }).catch(err => {
       console.error('Failed to load stats:', err);
-    }
+    });
   }, [selectedLanguage]);
 
   useEffect(() => {
-    if (!selectedLanguage) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const nextStats = await getSrsStats(selectedLanguage);
-        const nextStories = await getSrsStories(selectedLanguage);
-        if (!cancelled) {
-          setStats(nextStats);
-          setPastStories(nextStories);
-        }
-      } catch (err) {
-        console.error('Failed to load stats:', err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selectedLanguage]);
+    loadStats();
+    return () => { statsRequest.current++; };
+  }, [loadStats]);
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
+    if (langId === selectedLanguage) return;
     setSelectedLanguage(langId);
     safeLocalStorageSetItem('srsSelectedLanguage', langId);
+    setStats(null);
+    setPastStories([]);
   };
 
   const handleStatusFilterChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -348,7 +342,10 @@ const SrsStoryReview = () => {
         <Card className="shadow-sm" style={{ borderRadius: '12px', border: 'none' }}>
           <Card.Body>
             <Form.Group className="mb-3" controlId="srs-language-select">
-              <Form.Label>Language</Form.Label>
+              <div className="d-flex align-items-center justify-content-between mb-1">
+                <Form.Label className="mb-0">Language</Form.Label>
+                <SrsDeckOptions language={languages.find(lang => String(lang.languageId) === selectedLanguage)} onSaved={loadStats} />
+              </div>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>
                 <option value="">-- Select Language --</option>
                 {languages.map(lang => (
@@ -419,7 +416,7 @@ const SrsStoryReview = () => {
                 min={3}
                 max={30}
                 value={maxWords}
-                onChange={e => setMaxWords(parseInt(e.target.value))}
+                onChange={e => setMaxWordsOverride(parseInt(e.target.value))}
               />
               <div className="text-center text-muted">{maxWords} micro-contexts</div>
             </Form.Group>

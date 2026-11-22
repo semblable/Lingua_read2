@@ -21,6 +21,11 @@ namespace LinguaReadApi.Models
 
         public DateTime ReviewedAt { get; set; } = DateTime.UtcNow;
 
+        // The SRS day at grading time, using the reviewing device's offset.
+        // Null for reading credit and reviews saved before deck study entries.
+        public DateOnly? StudyDay { get; set; }
+        public SrsDeckStudyEntry? DeckStudyEntry { get; set; }
+
         // Pre-review state (for Undo functionality)
         public int OldInterval { get; set; }
         public int OldRepetitions { get; set; }

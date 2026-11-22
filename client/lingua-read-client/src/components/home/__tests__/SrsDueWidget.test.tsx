@@ -10,7 +10,7 @@ afterEach(cleanup);
 describe('SrsDueWidget', () => {
   test('offers a bounded session instead of exposing the entire backlog', () => {
     renderWidget({ count: 12_345 });
-    const button = screen.getByRole('button', { name: /Review 50 cards/ });
+    const button = screen.getByRole('button', { name: /Review up to 50 cards/ });
     expect(button).toHaveAttribute('href', '/srs?limit=50');
     expect(button).toHaveClass('btn-primary');
     expect(screen.queryByRole('button', { name: /12345|12,345/ })).not.toBeInTheDocument();
@@ -21,20 +21,20 @@ describe('SrsDueWidget', () => {
 
   test('caps the session at the actual due count, including the singular case', () => {
     renderWidget({ count: 1 });
-    expect(screen.getByRole('button', { name: /Review 1 card/ })).toHaveAttribute('href', '/srs?limit=1');
+    expect(screen.getByRole('button', { name: /Review up to 1 card/ })).toHaveAttribute('href', '/srs?limit=1');
   });
 
   test('offers only twelve cards when twelve are due, even after selecting a larger session', () => {
     renderWidget({ count: 12 });
     fireEvent.change(screen.getByLabelText('Session size'), { target: { value: '200' } });
-    expect(screen.getByRole('button', { name: /Review 12 cards/ })).toHaveAttribute('href', '/srs?limit=12');
+    expect(screen.getByRole('button', { name: /Review up to 12 cards/ })).toHaveAttribute('href', '/srs?limit=12');
     expect(screen.getByText('12 due')).toBeVisible();
   });
 
   test('changes the actual session route when choosing a different size', () => {
     renderWidget({ count: 2679 });
     fireEvent.change(screen.getByLabelText('Session size'), { target: { value: '100' } });
-    expect(screen.getByRole('button', { name: /Review 100 cards/ })).toHaveAttribute('href', '/srs?limit=100');
+    expect(screen.getByRole('button', { name: /Review up to 100 cards/ })).toHaveAttribute('href', '/srs?limit=100');
   });
 
   test('distinguishes unavailable stats from having no reviews due', () => {
@@ -67,7 +67,7 @@ describe('SrsDueWidget', () => {
       '200 reviews today · 50 more reviews queued · 2,350 saved for later'
     );
     expect(screen.getByTestId('srs-review-limit-note')).toHaveTextContent(
-      "New cards paused while reviews fill today's limit."
+      'Some decks have paused new cards while reviews fill their daily limits.'
     );
   });
 
@@ -101,7 +101,7 @@ describe('SrsDueWidget', () => {
     });
     expect(screen.getByRole('heading', { name: 'No reviews due' })).toBeInTheDocument();
     expect(screen.getByTestId('srs-due-backlog')).toHaveTextContent(
-      "New cards paused while reviews fill today's limit. 45 saved words waiting for future sessions."
+      'New cards paused while reviews fill their deck limits. 45 saved words waiting for future sessions.'
     );
   });
 });

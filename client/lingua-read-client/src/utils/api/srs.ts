@@ -15,6 +15,8 @@ export type SrsPhrases = ResponseOf<'/api/Srs/phrases/{wordId}', 'get'>;
 export type SrsStoryGenerationResult = ResponseOf<'/api/Srs/story-generate', 'post'>;
 export type SrsReviewResult = ResponseOf<'/api/Srs/review', 'post'>;
 export type SrsSuspendedCards = ResponseOf<'/api/Srs/suspended', 'get'>;
+export type SrsDeckSettings = ResponseOf<'/api/Srs/decks/{languageId}/settings', 'get'>;
+export type SrsDeckSettingsUpdate = RequestBodyOf<'/api/Srs/decks/{languageId}/settings', 'put'>;
 
 // The server counts SRS days (due dates, daily limits, streaks, heatmap) in the
 // user's local day, so every SRS call says which time zone the user is in.
@@ -102,6 +104,17 @@ export const getSrsStats = async (
   if (languageId) params.append('languageId', String(languageId));
   return await fetchApi<SrsStats>(srsUrl('stats', params));
 };
+
+export const getSrsDeckSettings = (languageId: number): Promise<SrsDeckSettings> =>
+  fetchApi<SrsDeckSettings>(srsUrl(`decks/${languageId}/settings`));
+
+export const updateSrsDeckSettings = (
+  languageId: number, settings: SrsDeckSettingsUpdate
+): Promise<SrsDeckSettings> =>
+  fetchApi<SrsDeckSettings>(srsUrl(`decks/${languageId}/settings`), {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  });
 
 /**
  * Reverts one review: by its log id (from the review response), or by the

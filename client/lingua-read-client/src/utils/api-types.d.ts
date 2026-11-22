@@ -3375,6 +3375,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/Srs/decks/{languageId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
+                header?: never;
+                path: {
+                    languageId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SrsDeckSettingsDto"];
+                        "application/json": components["schemas"]["SrsDeckSettingsDto"];
+                        "text/json": components["schemas"]["SrsDeckSettingsDto"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: {
+                    timezoneOffsetMinutes?: number;
+                };
+                header?: never;
+                path: {
+                    languageId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SrsDeckSettingsUpdateDto"];
+                    "text/json": components["schemas"]["SrsDeckSettingsUpdateDto"];
+                    "application/*+json": components["schemas"]["SrsDeckSettingsUpdateDto"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SrsDeckSettingsDto"];
+                        "application/json": components["schemas"]["SrsDeckSettingsDto"];
+                        "text/json": components["schemas"]["SrsDeckSettingsDto"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/Srs/due": {
         parameters: {
             query?: never;
@@ -7270,6 +7342,37 @@ export interface components {
             /** Format: int32 */
             flag?: number | null;
             tags?: string | null;
+        };
+        SrsDeckSettingsDto: {
+            /** Format: date */
+            studyDay?: string;
+            /** Format: int32 */
+            defaultMaxNewCards?: number;
+            /** Format: int32 */
+            defaultMaxReviews?: number;
+            defaultNewCardsIgnoreReviewLimit?: boolean;
+            /** Format: int32 */
+            maxNewCards?: number | null;
+            /** Format: int32 */
+            maxReviews?: number | null;
+            newCardsIgnoreReviewLimit?: boolean | null;
+            /** Format: int32 */
+            todayMaxNewCards?: number | null;
+            /** Format: int32 */
+            todayMaxReviews?: number | null;
+        };
+        SrsDeckSettingsUpdateDto: {
+            /** Format: int32 */
+            maxNewCards?: number | null;
+            /** Format: int32 */
+            maxReviews?: number | null;
+            newCardsIgnoreReviewLimit?: boolean | null;
+            /** Format: int32 */
+            todayMaxNewCards?: number | null;
+            /** Format: int32 */
+            todayMaxReviews?: number | null;
+            /** Format: date */
+            studyDay?: string | null;
         };
         SrsDueCardDto: {
             /** Format: int32 */

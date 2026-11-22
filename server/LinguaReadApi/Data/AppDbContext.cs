@@ -56,6 +56,8 @@ namespace LinguaReadApi.Data
         public DbSet<UserAudioLessonProgress> UserAudioLessonProgresses { get; set; } // Added for audio lesson progress
         public DbSet<UserSentenceProgress> UserSentenceProgresses { get; set; }
         public DbSet<TextBookmark> TextBookmarks { get; set; }
+        public DbSet<SrsDeckSettings> SrsDeckSettings { get; set; }
+        public DbSet<SrsDeckStudyEntry> SrsDeckStudyEntries { get; set; }
         public DbSet<SrsCardReview> SrsCardReviews { get; set; }
         public DbSet<SrsPhrase> SrsPhrases { get; set; }
         public DbSet<SrsReviewLog> SrsReviewLogs { get; set; }
@@ -390,6 +392,27 @@ namespace LinguaReadApi.Data
                 .WithMany()
                 .HasForeignKey(tb => tb.TextId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<SrsDeckSettings>(deck =>
+            {
+                deck.HasKey(settings => new { settings.UserId, settings.LanguageId });
+                deck.HasOne<User>().WithMany().HasForeignKey(settings => settings.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                deck.HasOne<Language>().WithMany().HasForeignKey(settings => settings.LanguageId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<SrsDeckStudyEntry>(study =>
+            {
+                study.HasIndex(entry => new { entry.UserId, entry.StudyDay, entry.LanguageId });
+                study.HasOne<User>().WithMany().HasForeignKey(entry => entry.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                study.HasOne<Language>().WithMany().HasForeignKey(entry => entry.LanguageId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                study.HasOne(entry => entry.ReviewLog).WithOne(log => log.DeckStudyEntry)
+                    .HasForeignKey<SrsDeckStudyEntry>(entry => entry.SrsReviewLogId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
 
             // Configure SrsCardReview entity
             modelBuilder.Entity<SrsCardReview>()

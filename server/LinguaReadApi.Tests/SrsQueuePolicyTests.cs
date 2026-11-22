@@ -15,6 +15,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Xunit;
 
@@ -175,8 +176,9 @@ public class SrsQueuePolicyTests
     private static SrsController CreateController(
         AppDbContext context,
         Guid userId,
-        IStoryGenerationServiceFactory? storyFactory = null) =>
-        new(context, storyFactory ?? Mock.Of<IStoryGenerationServiceFactory>())
+        IStoryGenerationServiceFactory? storyFactory = null,
+        TimeProvider? clock = null) =>
+        new(context, storyFactory ?? Mock.Of<IStoryGenerationServiceFactory>(), clock)
         {
             ControllerContext = new ControllerContext
             {
@@ -499,69 +501,299 @@ public class SrsQueuePolicyTests
     }
 
     [Fact]
-    public async Task DailyReviewLimit_IsSharedAcrossLanguagesAndQueueEntryPoints()
+    public async Task TwoLanguagesUseIndependentBudgetsInStatsAndBothQueues()
     {
         var (context, connection) = await CreateContextAsync(useSqlite: true);
         await using var _conn = connection;
         await using var _ctx = context;
 
-        var userId = Guid.NewGuid();
-        var now = DateTime.UtcNow;
-        context.Users.Add(new User { Id = userId, UserName = "reader" });
-        context.Languages.AddRange(
-            new Language { LanguageId = 1, Name = "Spanish", Code = "es" },
-            new Language { LanguageId = 2, Name = "French", Code = "fr" });
-        context.UserSettings.Add(new UserSettings { UserId = userId, SrsMaxNewCards = 5, SrsMaxReviews = 1 });
-        context.Words.AddRange(
-            new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 },
-            new Word { WordId = 2, UserId = userId, LanguageId = 2, Term = "bonjour", Status = 1 });
-        context.SrsCardReviews.AddRange(
-            new SrsCardReview
-            {
-                SrsCardReviewId = 1, WordId = 1, UserId = userId, HasEverGraduated = true, Interval = 5,
-                LastReviewedAt = now.AddDays(-6), NextReviewAt = now.AddDays(-1)
-            },
-            new SrsCardReview { SrsCardReviewId = 2, WordId = 2, UserId = userId, NextReviewAt = now.AddDays(-1) });
+        var userId = SeedStudyDecks(context, maxNew: 1, maxReviews: 1);
+        AddDeckCard(context, userId, 1, 1, Now, review: true);
+        AddDeckCard(context, userId, 1, 2, Now, review: true);
+        AddDeckCard(context, userId, 1, 3, Now);
+        AddDeckCard(context, userId, 2, 4, Now, review: true);
+        AddDeckCard(context, userId, 2, 5, Now, review: true);
+        AddDeckCard(context, userId, 2, 6, Now);
+        AddDeckCard(context, userId, 2, 7, Now);
+        AddDeckCard(context, userId, 1, 8, Now);
         await context.SaveChangesAsync();
-        var controller = CreateController(context, userId);
 
-        Assert.True(Unwrap(await controller.GetStats()).NewCardsPausedByReviewLimit);
+        var story = new Mock<IStoryGenerationService>();
+        story.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ReturnsAsync("""[{"term":"word6","context":"Voici word6."}]""");
+        var factory = new Mock<IStoryGenerationServiceFactory>();
+        factory.Setup(f => f.GetServiceForUserAsync(userId)).ReturnsAsync(story.Object);
+        var controller = CreateController(context, userId, factory.Object, new FakeTimeProvider(Now));
+        Unwrap(await controller.UpdateDeckSettings(2, new SrsDeckSettingsUpdateDto { NewCardsIgnoreReviewLimit = true }));
+
+        var spanish = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.True(spanish.NewCardsPausedByReviewLimit);
+        Assert.Equal(1, spanish.ReviewableCount);
         var french = Unwrap(await controller.GetStats(languageId: 2));
-        Assert.True(french.NewCardsPausedByReviewLimit);
-        Assert.Equal(0, french.DueReviewCount);
-        Assert.Empty(Unwrap(await controller.GetDueCards(languageId: 2)));
+        Assert.False(french.NewCardsPausedByReviewLimit);
+        Assert.Equal(2, french.ReviewableCount);
+        var aggregate = Unwrap(await controller.GetStats());
+        Assert.Equal(8, aggregate.DueCount);
+        Assert.Equal(3, aggregate.ReviewableCount);
+        Assert.Equal(1, aggregate.ReviewableNewCount);
+        Assert.Equal(2, aggregate.ReviewableReviewCount);
+        Assert.True(aggregate.NewCardsPausedByReviewLimit);
+        Assert.Equal(new[] { 1, 4, 6 }, Unwrap(await controller.GetDueCards()).Select(c => c.SrsCardReviewId).Order());
+
+        var spanishStory = Unwrap(await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest
+        {
+            LanguageId = 1, CardType = "new", MaxWords = 3
+        }));
+        Assert.Empty(spanishStory.MicroContexts);
+        Assert.Equal(0, spanishStory.RemainingNewBudget);
         var frenchStory = Unwrap(await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest
         {
             LanguageId = 2, CardType = "new", MaxWords = 3
         }));
-        Assert.Empty(frenchStory.MicroContexts);
-        Assert.Equal(0, frenchStory.RemainingNewBudget);
+        Assert.Equal(6, Assert.Single(frenchStory.MicroContexts).SrsCardReviewId);
+        Assert.Equal(1, frenchStory.RemainingNewBudget);
 
-        var spanishCard = await context.SrsCardReviews.FindAsync(1);
-        spanishCard!.IsSuspended = true;
+        var defaults = await context.UserSettings.SingleAsync();
+        defaults.SrsNewCardsIgnoreReviewLimit = true;
         await context.SaveChangesAsync();
-        var newCard = Assert.Single(Unwrap(await controller.GetDueCards(languageId: 2)));
-        Unwrap(await controller.SubmitReview(new SrsReviewSubmitDto
+        Assert.Equal(new[] { 1, 3, 4, 6 }, Unwrap(await controller.GetDueCards()).Select(c => c.SrsCardReviewId).Order());
+        Unwrap(await controller.UpdateDeckSettings(1, new SrsDeckSettingsUpdateDto { NewCardsIgnoreReviewLimit = false }));
+        Assert.True(Unwrap(await controller.GetStats(languageId: 1)).NewCardsPausedByReviewLimit);
+
+        await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 6, Grade = 3 });
+        var frenchReview = Unwrap(await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 4, Grade = 3 }));
+        french = Unwrap(await controller.GetStats(languageId: 2));
+        Assert.Equal((1, 1, 0), (french.StudiedNewCardsToday, french.StudiedReviewsToday, french.ReviewableCount));
+        spanish = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal((0, 0, 1), (spanish.StudiedNewCardsToday, spanish.StudiedReviewsToday, spanish.ReviewableCount));
+        Assert.Equal(1, Assert.Single(Unwrap(await controller.GetDueCards())).SrsCardReviewId);
+
+        await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 3 });
+        Assert.IsType<OkObjectResult>(await controller.UndoLastReview(new SrsUndoDto { SrsReviewLogId = frenchReview.SrsReviewLogId }));
+        french = Unwrap(await controller.GetStats(languageId: 2));
+        Assert.Equal((1, 0, 1), (french.StudiedNewCardsToday, french.StudiedReviewsToday, french.ReviewableCount));
+        spanish = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal((0, 1, 0), (spanish.StudiedNewCardsToday, spanish.StudiedReviewsToday, spanish.ReviewableCount));
+    }
+
+    [Fact]
+    public async Task DeckLimitsInheritCurrentDefaultsAndAllowZeroNewCards()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+        var userId = SeedStudyDecks(context, maxNew: 4, maxReviews: 5);
+        AddDeckCard(context, userId, 1, 1, Now);
+        AddDeckCard(context, userId, 1, 2, Now, review: true);
+        AddDeckCard(context, userId, 2, 3, Now);
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId, clock: new FakeTimeProvider(Now));
+
+        var inherited = Unwrap(await controller.GetDeckSettings(1));
+        Assert.Null(inherited.MaxNewCards);
+        Assert.Null(inherited.MaxReviews);
+        Assert.Equal((4, 5), (inherited.DefaultMaxNewCards, inherited.DefaultMaxReviews));
+        Unwrap(await controller.UpdateDeckSettings(1, new SrsDeckSettingsUpdateDto { MaxNewCards = 0, MaxReviews = 2 }));
+        var paused = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal((0, 2, 0), (paused.MaxNewCards, paused.MaxReviews, paused.ReviewableNewCount));
+        Assert.False(paused.NewCardsPausedByReviewLimit);
+        Assert.Equal(2, Assert.Single(Unwrap(await controller.GetDueCards(languageId: 1))).SrsCardReviewId);
+        Assert.Equal(3, Assert.Single(Unwrap(await controller.GetDueCards(languageId: 2))).SrsCardReviewId);
+        Assert.Equal(4, (await context.UserSettings.SingleAsync()).SrsMaxNewCards);
+
+        var defaults = await context.UserSettings.SingleAsync();
+        defaults.SrsMaxNewCards = 6;
+        defaults.SrsMaxReviews = 7;
+        await context.SaveChangesAsync();
+        var french = Unwrap(await controller.GetStats(languageId: 2));
+        Assert.Equal((6, 7), (french.MaxNewCards, french.MaxReviews));
+        Assert.Equal(0, Unwrap(await controller.GetStats(languageId: 1)).MaxNewCards);
+
+        Unwrap(await controller.UpdateDeckSettings(1, new SrsDeckSettingsUpdateDto()));
+        var spanish = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal((6, 7, 1), (spanish.MaxNewCards, spanish.MaxReviews, spanish.ReviewableNewCount));
+    }
+
+    [Fact]
+    public async Task TodayOnlyLimitsExpireAtTheConfiguredSrsBoundary()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+        var now = Now.Date.AddHours(4).AddMinutes(-1);
+        var clock = new FakeTimeProvider(now);
+        const int offset = 120; // 05:59 local, with the SRS day starting at 06:00.
+        var userId = SeedStudyDecks(context, maxNew: 4, maxReviews: 5, dayStartHour: 6);
+        AddDeckCard(context, userId, 1, 1, now);
+        AddDeckCard(context, userId, 1, 2, now, review: true);
+        AddDeckCard(context, userId, 1, 3, now, review: true);
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId, clock: clock);
+
+        var current = Unwrap(await controller.GetDeckSettings(1, offset));
+        Assert.Equal(DateOnly.FromDateTime(now.AddDays(-1)), current.StudyDay);
+        var limits = new SrsDeckSettingsUpdateDto
         {
-            SrsCardReviewId = newCard.SrsCardReviewId, Grade = 3
-        }));
+            MaxNewCards = 2, TodayMaxNewCards = 0, TodayMaxReviews = 1, StudyDay = current.StudyDay
+        };
+        var saved = Unwrap(await controller.UpdateDeckSettings(1, limits, offset));
+        Assert.Equal(0, saved.TodayMaxNewCards);
+        Assert.Equal(1, saved.TodayMaxReviews);
+        var before = Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: offset));
+        Assert.Equal((0, 1, 1), (before.MaxNewCards, before.MaxReviews, before.ReviewableCount));
+        Assert.Single(Unwrap(await controller.GetDueCards(languageId: 1, timezoneOffsetMinutes: offset)));
 
-        // A scheduled review becoming available later still shares the slot already used by the new card.
-        (await context.SrsCardReviews.FindAsync(1))!.IsSuspended = false;
+        clock.Advance(TimeSpan.FromMinutes(1));
+        var expired = Unwrap(await controller.GetDeckSettings(1, offset));
+        Assert.Null(expired.TodayMaxNewCards);
+        Assert.Null(expired.TodayMaxReviews);
+        Assert.Equal(2, expired.MaxNewCards);
+        Assert.Null(expired.MaxReviews);
+        var after = Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: offset));
+        Assert.Equal((2, 5, 3), (after.MaxNewCards, after.MaxReviews, after.ReviewableCount));
+        Assert.Equal(3, Unwrap(await controller.GetDueCards(languageId: 1, timezoneOffsetMinutes: offset)).Count);
+        Assert.IsType<ConflictObjectResult>((await controller.UpdateDeckSettings(1, limits, offset)).Result);
+
+        // A device further west still sees the previous study date, but the saved override has expired.
+        var differentOffset = Unwrap(await controller.GetDeckSettings(1, timezoneOffsetMinutes: 60));
+        Assert.Equal(current.StudyDay, differentOffset.StudyDay);
+        Assert.Null(differentOffset.TodayMaxNewCards);
+        Assert.Null(differentOffset.TodayMaxReviews);
+    }
+
+    [Fact]
+    public async Task OfflineReplayAndUndoChargeOnlyTheDeckAndDayOfTheGrade()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+        var boundary = Now.Date.AddHours(4);
+        const int offset = 120;
+        var userId = SeedStudyDecks(context, maxNew: 1, maxReviews: 1, dayStartHour: 6);
+        AddDeckCard(context, userId, 1, 1, boundary, review: true);
+        AddDeckCard(context, userId, 2, 2, boundary);
+        AddDeckCard(context, userId, 2, 3, boundary);
+        AddDeckCard(context, userId, 2, 4, boundary);
         await context.SaveChangesAsync();
-        Assert.Equal(0, Unwrap(await controller.GetStats(languageId: 1)).ReviewableReviewCount);
-        Assert.Empty(Unwrap(await controller.GetDueCards(languageId: 1)));
-        var spanishStory = Unwrap(await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest
+        var controller = CreateController(context, userId, clock: new FakeTimeProvider(boundary.AddMinutes(6)));
+
+        var today = new SrsReviewSubmitDto
         {
-            LanguageId = 1, CardType = "review", MaxWords = 3
-        }));
-        Assert.Empty(spanishStory.MicroContexts);
-        Assert.Equal(0, spanishStory.RemainingReviewBudget);
+            SrsCardReviewId = 3, Grade = 3, ClientEventId = "french-today", ReviewedAt = boundary.AddMinutes(1)
+        };
+        var yesterday = new SrsReviewSubmitDto
+        {
+            SrsCardReviewId = 2, Grade = 3, ClientEventId = "french-yesterday", ReviewedAt = boundary.AddMinutes(-1)
+        };
+        var frenchReview = Unwrap(await controller.SubmitReview(today, offset));
+        await controller.SubmitReview(yesterday, offset);
+        Assert.Equal(frenchReview.SrsReviewLogId, Unwrap(await controller.SubmitReview(today, offset)).SrsReviewLogId);
+        await controller.SubmitReview(new SrsReviewSubmitDto
+        {
+            SrsCardReviewId = 1, Grade = 3, ClientEventId = "spanish-today", ReviewedAt = boundary.AddMinutes(2)
+        }, offset);
 
-        (await context.UserSettings.SingleAsync()).SrsNewCardsIgnoreReviewLimit = true;
+        Assert.Equal(3, await context.SrsReviewLogs.CountAsync());
+        // In the viewing device's timezone, both timestamps fall into today's SRS day.
+        // Replay still accounts for the study day on the device that recorded the grade.
+        const int viewerOffset = 180;
+        var french = Unwrap(await controller.GetStats(languageId: 2, timezoneOffsetMinutes: viewerOffset));
+        Assert.Equal((1, 0, 0), (french.StudiedNewCardsToday, french.StudiedReviewsToday, french.ReviewableNewCount));
+        var spanish = Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: viewerOffset));
+        Assert.Equal((0, 1), (spanish.StudiedNewCardsToday, spanish.StudiedReviewsToday));
+        Assert.IsType<OkObjectResult>(await controller.UndoLastReview(new SrsUndoDto { ClientEventId = today.ClientEventId }, viewerOffset));
+        french = Unwrap(await controller.GetStats(languageId: 2, timezoneOffsetMinutes: viewerOffset));
+        Assert.Equal((0, 0, 1), (french.StudiedNewCardsToday, french.StudiedReviewsToday, french.ReviewableNewCount));
+        Assert.Equal(1, Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: viewerOffset)).StudiedReviewsToday);
+    }
+
+    [Fact]
+    public async Task OneCardCanSpendAReviewSlotOnTwoStudyDaysAcrossTimezones()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+        var boundary = Now.Date.AddHours(4);
+        var clock = new FakeTimeProvider(boundary.AddMinutes(-5));
+        var userId = SeedStudyDecks(context, maxNew: 1, maxReviews: 1);
+        context.UserSettings.Local.Single().SrsMaxIntervalDays = 1;
+        AddDeckCard(context, userId, 1, 1, boundary, review: true);
         await context.SaveChangesAsync();
-        Assert.Equal(1, Unwrap(await controller.GetStats(languageId: 1)).ReviewableReviewCount);
-        Assert.Single(Unwrap(await controller.GetDueCards(languageId: 1)));
+        var controller = CreateController(context, userId, clock: clock);
+        var grade = new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 2 };
+
+        await controller.SubmitReview(grade, timezoneOffsetMinutes: 0);
+        clock.Advance(TimeSpan.FromMinutes(15));
+        const int offset = 120;
+        Assert.Single(Unwrap(await controller.GetDueCards(languageId: 1, timezoneOffsetMinutes: offset)));
+
+        var review = Unwrap(await controller.SubmitReview(grade, timezoneOffsetMinutes: offset));
+        Assert.Equal(1, Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: offset)).StudiedReviewsToday);
+        Assert.IsType<OkObjectResult>(await controller.UndoLastReview(new SrsUndoDto { SrsReviewLogId = review.SrsReviewLogId }, offset));
+        var stats = Unwrap(await controller.GetStats(languageId: 1, timezoneOffsetMinutes: offset));
+        Assert.Equal(0, stats.StudiedReviewsToday);
+        Assert.Equal(1, stats.CurrentStreak);
+    }
+
+    [Fact]
+    public async Task LegacyReviewsUseEachDecksBudgetAndDeletingAStudiedCardKeepsItsSpentSlot()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+        var userId = SeedStudyDecks(context, maxNew: 1, maxReviews: 1);
+        AddDeckCard(context, userId, 1, 1, Now, review: true);
+        AddDeckCard(context, userId, 1, 2, Now, review: true);
+        AddDeckCard(context, userId, 2, 3, Now);
+        AddDeckCard(context, userId, 2, 4, Now);
+        var legacyCard = context.SrsCardReviews.Local.Single(card => card.SrsCardReviewId == 1);
+        context.SrsReviewLogs.Add(new SrsReviewLog
+        {
+            UserId = userId, SrsCardReviewId = legacyCard.SrsCardReviewId,
+            ReviewedAt = Now.AddMinutes(-1), OldLastReviewedAt = legacyCard.LastReviewedAt,
+            Kind = (int)SrsReviewKind.Review, Grade = 2
+        });
+        legacyCard.NextReviewAt = Now.AddDays(10);
+        legacyCard.LastReviewedAt = Now.AddMinutes(-1);
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId, clock: new FakeTimeProvider(Now));
+
+        var spanish = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal((1, 0), (spanish.StudiedReviewsToday, spanish.ReviewableReviewCount));
+        Assert.Equal(3, Assert.Single(Unwrap(await controller.GetDueCards(languageId: 2))).SrsCardReviewId);
+
+        await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 3, Grade = 3 });
+        await context.Words.Where(word => word.WordId == 3).ExecuteDeleteAsync();
+        Assert.False(await context.SrsReviewLogs.AnyAsync(log => log.SrsCardReviewId == 3));
+        var french = Unwrap(await controller.GetStats(languageId: 2));
+        Assert.Equal((1, 0), (french.StudiedNewCardsToday, french.ReviewableNewCount));
+    }
+
+    private static Guid SeedStudyDecks(AppDbContext context, int maxNew, int maxReviews, int dayStartHour = 4)
+    {
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "reader" });
+        context.Languages.AddRange(
+            new Language { LanguageId = 1, Name = "Spanish", Code = "es" },
+            new Language { LanguageId = 2, Name = "French", Code = "fr" });
+        context.UserSettings.Add(new UserSettings
+        {
+            UserId = userId, SrsMaxNewCards = maxNew, SrsMaxReviews = maxReviews,
+            SrsDayStartHour = dayStartHour, SrsNewCardOrder = "oldest"
+        });
+        return userId;
+    }
+
+    private static void AddDeckCard(AppDbContext context, Guid userId, int languageId, int id, DateTime now, bool review = false)
+    {
+        context.Words.Add(new Word { WordId = id, UserId = userId, LanguageId = languageId, Term = $"word{id}", Status = review ? 3 : 1 });
+        context.SrsCardReviews.Add(new SrsCardReview
+        {
+            SrsCardReviewId = id, WordId = id, UserId = userId, CreatedAt = now.AddDays(-12),
+            NextReviewAt = now.AddDays(-1), LastReviewedAt = review ? now.AddDays(-11) : null,
+            HasEverGraduated = review, Interval = review ? 10 : 0, Repetitions = review ? 3 : 0,
+            Stability = review ? 10 : null, Difficulty = review ? 5 : null
+        });
     }
 
     [Fact]
@@ -914,24 +1146,22 @@ public class SrsQueuePolicyTests
 
         var controller = CreateController(context, userId);
 
-        // Reviewing a carried-over learning card advances streak, but must NOT consume SrsDailyReviewsStudied.
+        // Reviewing a carried-over learning card advances the streak without spending a deck slot.
         var reviewRes = Unwrap(await controller.SubmitReview(new SrsReviewSubmitDto { SrsCardReviewId = 1, Grade = 2 }));
-        var settingsAfter = await context.UserSettings.AsNoTracking().SingleAsync();
-        Assert.Equal(0, settingsAfter.SrsDailyReviewsStudied);
-        Assert.Equal(0, settingsAfter.SrsDailyNewCardsStudied);
-        Assert.Equal(1, settingsAfter.SrsCurrentStreak);
 
         // The 1 due review card must still be available under SrsMaxReviews = 1.
         var statsAfter = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal(1, statsAfter.CurrentStreak);
         Assert.Equal(1, statsAfter.ReviewableReviewCount);
         Assert.Equal(0, statsAfter.StudiedReviewsToday);
+        Assert.Equal(0, statsAfter.StudiedNewCardsToday);
 
         // Undoing the learning review leaves daily counters at 0 and cleanly reverts the streak.
         await controller.UndoLastReview(new SrsUndoDto { SrsReviewLogId = reviewRes.SrsReviewLogId });
-        var settingsUndone = await context.UserSettings.AsNoTracking().SingleAsync();
-        Assert.Equal(0, settingsUndone.SrsDailyReviewsStudied);
-        Assert.Equal(0, settingsUndone.SrsDailyNewCardsStudied);
-        Assert.Equal(0, settingsUndone.SrsCurrentStreak);
+        var statsUndone = Unwrap(await controller.GetStats(languageId: 1));
+        Assert.Equal(0, statsUndone.StudiedReviewsToday);
+        Assert.Equal(0, statsUndone.StudiedNewCardsToday);
+        Assert.Equal(0, statsUndone.CurrentStreak);
     }
 
     [Fact]

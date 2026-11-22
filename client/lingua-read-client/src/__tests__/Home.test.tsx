@@ -144,7 +144,7 @@ describe('Home (integration)', () => {
     expect(screen.getByText('1,234')).toBeInTheDocument();
 
     // The review action hands off a bounded session size.
-    expect(await screen.findByRole('button', { name: /Review 12 cards/ })).toHaveAttribute('href', '/srs?limit=12');
+    expect(await screen.findByRole('button', { name: /Review up to 12 cards/ })).toHaveAttribute('href', '/srs?limit=12');
 
     // Continue learning card renders with the most-recent text title.
     expect(await screen.findByText('Una historia')).toBeInTheDocument();
@@ -205,7 +205,7 @@ describe('Home (integration)', () => {
     expect(screen.getByTestId('srs-due-breakdown')).toHaveTextContent(
       '5 reviews today · 20 new today · 2,575 saved for later'
     );
-    expect(screen.getByRole('button', { name: /Review 25 cards/ })).toHaveAttribute('href', '/srs?limit=25');
+    expect(screen.getByRole('button', { name: /Review up to 25 cards/ })).toHaveAttribute('href', '/srs?limit=25');
   });
 
   test('shows calm backlog summary on Home when today limit is complete and untouched words remain', async () => {
@@ -287,7 +287,7 @@ describe('Home (integration)', () => {
       '3 learning · 200 reviews today · 50 more reviews queued · 500 saved for later'
     );
     expect(screen.getByTestId('srs-review-limit-note')).toHaveTextContent(
-      "New cards paused while reviews fill today's limit."
+      'Some decks have paused new cards while reviews fill their daily limits.'
     );
   });
 

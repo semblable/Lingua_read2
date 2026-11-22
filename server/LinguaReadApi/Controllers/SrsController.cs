@@ -18,6 +18,7 @@ using LinguaReadApi.Services.Ai;
 using LinguaReadApi.Services.Srs;
 using LinguaReadApi.Services.Tokenization;
 using LinguaReadApi.Utilities;
+using Npgsql;
 
 namespace LinguaReadApi.Controllers
 {
@@ -31,11 +32,95 @@ namespace LinguaReadApi.Controllers
         private const int ReviewSaveAttempts = 3;
         private readonly AppDbContext _context;
         private readonly IStoryGenerationServiceFactory _storyGenerationServiceFactory;
+        private readonly TimeProvider _clock;
 
-        public SrsController(AppDbContext context, IStoryGenerationServiceFactory storyGenerationServiceFactory)
+        public SrsController(AppDbContext context, IStoryGenerationServiceFactory storyGenerationServiceFactory,
+            TimeProvider? clock = null)
         {
             _context = context;
             _storyGenerationServiceFactory = storyGenerationServiceFactory;
+            _clock = clock ?? TimeProvider.System;
+        }
+
+        private DateTime UtcNow => _clock.GetUtcNow().UtcDateTime;
+
+        [HttpGet("decks/{languageId}/settings")]
+        public async Task<ActionResult<SrsDeckSettingsDto>> GetDeckSettings(int languageId,
+            [FromQuery] int timezoneOffsetMinutes = 0)
+        {
+            var userId = GetUserId();
+            if (!await _context.Languages.AnyAsync(language => language.LanguageId == languageId)) return NotFound();
+
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId);
+            var deck = await _context.SrsDeckSettings.AsNoTracking()
+                .FirstOrDefaultAsync(s => s.UserId == userId && s.LanguageId == languageId);
+            var day = DayContext(settings, timezoneOffsetMinutes, UtcNow);
+            return DeckSettingsDto(settings, deck, day);
+        }
+
+        [HttpPut("decks/{languageId}/settings")]
+        public async Task<ActionResult<SrsDeckSettingsDto>> UpdateDeckSettings(int languageId,
+            [FromBody] SrsDeckSettingsUpdateDto dto, [FromQuery] int timezoneOffsetMinutes = 0)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userId = GetUserId();
+            if (!await _context.Languages.AnyAsync(language => language.LanguageId == languageId)) return NotFound();
+
+            var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId);
+            var day = DayContext(settings, timezoneOffsetMinutes, UtcNow);
+            bool hasTodayLimit = dto.TodayMaxNewCards.HasValue || dto.TodayMaxReviews.HasValue;
+            if (hasTodayLimit && dto.StudyDay != day.Today)
+                return Conflict(new { message = "A new SRS day has started. Reopen deck limits to set today's limits." });
+
+            var deck = await _context.SrsDeckSettings.FindAsync(userId, languageId);
+            if (deck == null)
+            {
+                deck = new SrsDeckSettings { UserId = userId, LanguageId = languageId };
+                _context.SrsDeckSettings.Add(deck);
+            }
+            else
+            {
+                _context.Entry(deck).State = EntityState.Modified;
+            }
+
+            deck.MaxNewCards = dto.MaxNewCards;
+            deck.MaxReviews = dto.MaxReviews;
+            deck.NewCardsIgnoreReviewLimit = dto.NewCardsIgnoreReviewLimit;
+            deck.TodayStudyDay = hasTodayLimit ? day.Today : null;
+            deck.TodayExpiresAt = hasTodayLimit ? day.TomorrowStartUtc : null;
+            deck.TodayMaxNewCards = dto.TodayMaxNewCards;
+            deck.TodayMaxReviews = dto.TodayMaxReviews;
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+                { SqlState: PostgresErrorCodes.UniqueViolation })
+            {
+                return Conflict(new { message = "Deck limits were saved in another session. Reopen them to make changes." });
+            }
+
+            return DeckSettingsDto(settings, deck, day);
+        }
+
+        private static SrsDeckSettingsDto DeckSettingsDto(UserSettings? settings, SrsDeckSettings? deck, SrsDayContext day)
+        {
+            var defaults = SrsDeckLimits.FromDefaults(settings);
+            bool today = deck?.HasTodayLimits(day.Today, day.NowUtc) == true;
+            return new SrsDeckSettingsDto
+            {
+                StudyDay = day.Today,
+                DefaultMaxNewCards = defaults.MaxNewCards,
+                DefaultMaxReviews = defaults.MaxReviews,
+                DefaultNewCardsIgnoreReviewLimit = defaults.NewCardsIgnoreReviewLimit,
+                MaxNewCards = deck?.MaxNewCards,
+                MaxReviews = deck?.MaxReviews,
+                NewCardsIgnoreReviewLimit = deck?.NewCardsIgnoreReviewLimit,
+                TodayMaxNewCards = today ? deck?.TodayMaxNewCards : null,
+                TodayMaxReviews = today ? deck?.TodayMaxReviews : null,
+            };
         }
 
         // GET: api/srs/due?languageId=1&status=1,2&onlyOneTarget=false&limit=20&timezoneOffsetMinutes=120
@@ -50,43 +135,28 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
             limit = Math.Clamp(limit, 1, 200);
 
-            // 1. Get User Limits
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
-            int maxNew = SrsQueuePolicy.EffectiveMaxNew(settings?.SrsMaxNewCards);
-            int maxReviews = SrsQueuePolicy.EffectiveMaxReviews(settings?.SrsMaxReviews);
             string reviewOrder = string.IsNullOrWhiteSpace(settings?.SrsReviewOrder)
                 ? "mix"
                 : settings!.SrsReviewOrder;
             string newCardOrder = SrsQueuePolicy.NormalizeNewCardOrder(settings?.SrsNewCardOrder);
-            bool ignoreReviewLimit = settings?.SrsNewCardsIgnoreReviewLimit ?? false;
 
             // Card style: translation (default), cloze (mask term in mined sentence), or mixed.
             // Cloze/mixed populate ClozeSentence; translation leaves it null.
             string cardType = NormalizeCardType(settings?.SrsCardType);
             bool emitClozeSentence = ClozeReviewEnabled && (cardType is "cloze" or "mixed");
 
-            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
-            int remainingNewByNewCap = SrsQueuePolicy.RemainingNewByNewCap(maxNew, studiedNew);
-
-            // Do not short-circuit when both daily quotas are exhausted: learning-phase
-            // cards still apply (see validLearningCards below, which ignores these limits).
-
-            // 2. Reserve review slots across all languages because the daily limits are shared.
-            var dueCards = AvailableCards(userId, now).Where(IsDue(now, day.TomorrowStartUtc));
-            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0 && remainingReviews > 0)
-                ? await CountScheduledReviewsAsync(dueCards)
-                : 0;
-            int remainingNew = SrsQueuePolicy.RemainingNew(
-                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
-
-            var query = dueCards;
-            if (languageId.HasValue)
-                query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
+            // Reserve review slots in each deck before applying session filters.
+            var query = AvailableCards(userId, now, languageId).Where(IsDue(now, day.TomorrowStartUtc));
+            var budgets = await LoadDeckBudgetsAsync(userId, languageId, settings, day, query);
+            var newLimits = budgets.Where(b => b.Value.ReviewableNew > 0)
+                .ToDictionary(b => b.Key, b => b.Value.RemainingNew);
+            var reviewLimits = budgets.Where(b => b.Value.ReviewableReviews > 0)
+                .ToDictionary(b => b.Key, b => b.Value.RemainingReviews);
 
             if (!string.IsNullOrEmpty(status))
             {
@@ -110,43 +180,24 @@ namespace LinguaReadApi.Controllers
             if (onlyOneTarget)
                 query = query.Where(scr => _context.SrsPhrases.Any(sp => sp.UserId == userId && sp.WordId == scr.WordId));
 
-            // 3. Separate queries. The 1T filter drops multi-unknown sentences after fetching, so over-fetch when it's on.
+            // The 1T filter drops multi-unknown sentences after fetching, so over-fetch when it's on.
             int overFetch = onlyOneTarget ? 4 : 1;
-            int newTake = onlyOneTarget
-                ? Math.Max(Math.Min(remainingNew, limit) * overFetch, Math.Min(limit * overFetch, 200))
-                : Math.Min(remainingNew, limit);
-            int reviewTake = onlyOneTarget
-                ? Math.Max(Math.Min(remainingReviews, limit) * overFetch, Math.Min(limit * overFetch, 200))
-                : Math.Min(remainingReviews, limit);
+            int PoolSize(int remaining) => onlyOneTarget
+                ? Math.Max(Math.Min(remaining, limit) * overFetch, Math.Min(limit * overFetch, 200))
+                : Math.Min(remaining, limit);
 
-            var learningCardsPool = await query
-                .Where(scr => scr.IsLearning)
-                .OrderBy(scr => scr.NextReviewAt)
-                .Take(limit * overFetch)
-                .Include(scr => scr.Word)
-                    .ThenInclude(w => w.Translation)
-                .ToListAsync();
-
-            var newCardsPool = remainingNew > 0
-                ? await SelectNewCardsAsync(query, userId, newCardOrder, now, newTake)
-                : new List<SrsCardReview>();
-
+            var learningCardsPool = await SelectLearningCardsAsync(query, limit * overFetch);
+            var newPoolLimits = newLimits.ToDictionary(entry => entry.Key, entry => PoolSize(entry.Value));
+            var newCardsPool = await SelectNewCardsAsync(query, userId, newCardOrder, now, limit * overFetch, newPoolLimits);
             var reviewCardsPool = new List<SrsCardReview>();
-            if (remainingReviews > 0)
-            {
-                var reviewCardsQuery = query
-                    .Where(scr => !scr.IsLearning && scr.LastReviewedAt != null)
-                    .OrderBy(scr => scr.NextReviewAt)
-                    .Take(reviewTake)
-                    .Include(scr => scr.Word)
-                        .ThenInclude(w => w.Translation);
-                reviewCardsPool = await reviewCardsQuery.ToListAsync();
-            }
+            foreach (var (deckId, remaining) in reviewLimits)
+                reviewCardsPool.AddRange(await SelectReviewCardsAsync(
+                    query.Where(card => card.Word.LanguageId == deckId), PoolSize(remaining)));
 
             var allFetchedCards = learningCardsPool.Concat(newCardsPool).Concat(reviewCardsPool).ToList();
             if (!allFetchedCards.Any()) return new List<SrsDueCardDto>();
 
-            // 4. Select each card's displayed example before counting its unknown words (1T).
+            // Select each card's displayed example before counting its unknown words (1T).
             var cardWordIds = allFetchedCards.Select(c => c.WordId).Distinct().ToList();
             var phrases = await _context.SrsPhrases
                 .AsNoTracking()
@@ -212,44 +263,28 @@ namespace LinguaReadApi.Controllers
             }
             var unknownCounts = await SrsUnknownWordCounter.CountAsync(_context, userId, examples, cardLanguages);
 
-            // 5. Apply 1T filter to build lists
             var scheduler = new SrsScheduler(day.Options);
-            var validLearningCards = new List<SrsDueCardDto>();
-            var validNewCards = new List<SrsDueCardDto>();
-            var validReviewCards = new List<SrsDueCardDto>();
-
-            foreach (var card in allFetchedCards)
+            bool IsEligible(SrsCardReview card) => !onlyOneTarget || unknownCounts.GetValueOrDefault(card.SrsCardReviewId) == 1;
+            SrsDueCardDto MapCard(SrsCardReview card)
             {
                 var cardPhrases = phrasesByWordId.GetValueOrDefault(card.WordId) ?? new List<SrsPhrase>();
                 int unknownWordsInBestPhrase = unknownCounts.GetValueOrDefault(card.SrsCardReviewId);
-
-                // 1T needs a phrase whose only unknown word is the card's own.
-                if (onlyOneTarget && unknownWordsInBestPhrase != 1) continue;
-
-                var dto = ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase, clozes.GetValueOrDefault(card.SrsCardReviewId), scheduler, now);
-
-                switch (card.GetState())
-                {
-                    case SrsCardState.Learning:
-                    case SrsCardState.Relearning:
-                        validLearningCards.Add(dto);
-                        break;
-                    case SrsCardState.New:
-                        validNewCards.Add(dto);
-                        break;
-                    default:
-                        validReviewCards.Add(dto);
-                        break;
-                }
+                return ToDueCardDto(card, cardPhrases, unknownWordsInBestPhrase,
+                    clozes.GetValueOrDefault(card.SrsCardReviewId), scheduler, now);
             }
 
-            // 6. Enforce remaining limits
-            validNewCards = validNewCards.Take(remainingNew).ToList();
-            validReviewCards = validReviewCards.Take(remainingReviews).ToList();
+            var validLearningCards = learningCardsPool.Where(IsEligible).ToList();
+            var validNewCards = TakeWithinDeckLimits(newCardsPool.Where(IsEligible), card => card.Word.LanguageId, newLimits)
+                .Take(limit).ToList();
+            var reviewCandidates = reviewCardsPool.Where(IsEligible).OrderBy(card => card.NextReviewAt)
+                .ThenBy(card => card.SrsCardReviewId);
+            var validReviewCards = TakeWithinDeckLimits(reviewCandidates, card => card.Word.LanguageId, reviewLimits)
+                .Take(limit).ToList();
 
-            // 7. Apply Order (learning cards ignore daily limits and sort first)
+            // Learning cards ignore daily limits and sort first.
             return MergeByReviewOrder(reviewOrder, validLearningCards, validNewCards, validReviewCards)
                 .Take(limit)
+                .Select(MapCard)
                 .ToList();
         }
 
@@ -262,7 +297,7 @@ namespace LinguaReadApi.Controllers
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
-            return await SubmitReviewAsync(dto, timezoneOffsetMinutes, DateTime.UtcNow, attempt: 1);
+            return await SubmitReviewAsync(dto, timezoneOffsetMinutes, UtcNow, attempt: 1);
         }
 
         private async Task<ActionResult<SrsReviewResultDto>> SubmitReviewAsync(
@@ -282,12 +317,15 @@ namespace LinguaReadApi.Controllers
                 if (replayed != null) return Ok(replayed);
             }
 
-            var card = await _context.SrsCardReviews
-                .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == dto.SrsCardReviewId && scr.UserId == userId);
+            var reviewCard = await _context.SrsCardReviews
+                .Where(scr => scr.SrsCardReviewId == dto.SrsCardReviewId && scr.UserId == userId)
+                .Select(scr => new { Card = scr, scr.Word.LanguageId })
+                .FirstOrDefaultAsync();
 
-            if (card == null)
+            if (reviewCard == null)
                 return NotFound("Card not found.");
 
+            var card = reviewCard.Card;
             if (card.IsSuspended)
                 return BadRequest(new { Message = "Card is suspended." });
 
@@ -306,19 +344,30 @@ namespace LinguaReadApi.Controllers
             var before = card.ToSnapshot();
             var outcome = scheduler.Review(before, dto.Grade, reviewedAt);
 
-            // 1. Streak & daily limits, on the user day the review happened.
+            var studyDay = SrsDay.UserDay(reviewedAt, day.Options.TimezoneOffsetMinutes, day.Options.DayStartHour);
             if (settings != null)
-                CountTowardDailyLimits(settings, before, reviewedAt, day.Options);
+                AdvanceStreak(settings, studyDay);
 
-            // 2. Log for undo & statistics, capturing the state before the review.
             var reviewLog = NewReviewLog(userId, card, dto.Grade, reviewedAt, outcome);
             reviewLog.ClientEventId = string.IsNullOrEmpty(dto.ClientEventId) ? null : dto.ClientEventId;
+            reviewLog.StudyDay = studyDay;
+            if (before.State is SrsCardState.New or SrsCardState.Review &&
+                !await ReviewedOnStudyDayAsync(card, studyDay, day.Options))
+            {
+                reviewLog.DeckStudyEntry = new SrsDeckStudyEntry
+                {
+                    UserId = userId,
+                    LanguageId = reviewCard.LanguageId,
+                    StudyDay = studyDay,
+                    IsNewCard = before.State == SrsCardState.New
+                };
+            }
             _context.SrsReviewLogs.Add(reviewLog);
 
             card.Apply(outcome.Card);
             bool becameLeech = outcome.IsLapse && SrsLeeches.OnLapse(card, settings);
 
-            // 3. The word's reader status follows the card (word-status sync settings).
+            // The word's reader status follows the card (word-status sync settings).
             var statusChange = await SyncWordStatusAsync(userId, card, outcome, settings, reviewLog, requestedReviewAt);
 
             try
@@ -390,7 +439,7 @@ namespace LinguaReadApi.Controllers
                 Sentence = dto.Sentence,
                 TextId = dto.TextId,
                 TextTitle = dto.TextTitle,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = UtcNow
             };
             _context.SrsPhrases.Add(phrase);
 
@@ -410,7 +459,7 @@ namespace LinguaReadApi.Controllers
         {
             var userId = GetUserId();
             // Get the latest review log from the last 15 minutes
-            var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
+            var cutoffTime = UtcNow.AddMinutes(-15);
             var lastReviewLog = await _context.SrsReviewLogs
                 .AsNoTracking()
                 .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime)
@@ -438,7 +487,7 @@ namespace LinguaReadApi.Controllers
             [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] SrsUndoDto? dto = null,
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
-            return await UndoLastReviewAsync(dto, timezoneOffsetMinutes, DateTime.UtcNow, attempt: 1);
+            return await UndoLastReviewAsync(dto, timezoneOffsetMinutes, UtcNow, attempt: 1);
         }
 
         private async Task<IActionResult> UndoLastReviewAsync(SrsUndoDto? dto, int timezoneOffsetMinutes, DateTime now, int attempt)
@@ -447,14 +496,13 @@ namespace LinguaReadApi.Controllers
             var cutoffTime = now.AddMinutes(-15);
 
             var clientEventId = dto?.ClientEventId;
+            var logs = _context.SrsReviewLogs.Include(log => log.DeckStudyEntry).Where(log => log.UserId == userId);
             var lastLog = dto?.SrsReviewLogId is { } logId
-                ? await _context.SrsReviewLogs
-                    .FirstOrDefaultAsync(log => log.SrsReviewLogId == logId && log.UserId == userId)
+                ? await logs.FirstOrDefaultAsync(log => log.SrsReviewLogId == logId)
                 : !string.IsNullOrEmpty(clientEventId)
-                ? await _context.SrsReviewLogs
-                    .FirstOrDefaultAsync(log => log.UserId == userId && log.ClientEventId == clientEventId)
-                : await _context.SrsReviewLogs
-                    .Where(log => log.UserId == userId && log.ReviewedAt >= cutoffTime && log.Kind != (int)SrsReviewKind.Reading)
+                ? await logs.FirstOrDefaultAsync(log => log.ClientEventId == clientEventId)
+                : await logs
+                    .Where(log => log.ReviewedAt >= cutoffTime && log.Kind != (int)SrsReviewKind.Reading)
                     .OrderByDescending(log => log.ReviewedAt)
                     .ThenByDescending(log => log.SrsReviewLogId)
                     .FirstOrDefaultAsync();
@@ -507,16 +555,17 @@ namespace LinguaReadApi.Controllers
                 }
             }
 
-            // Revert daily limits and streak. Reading credit never counted toward them.
+            // Reading credit never counted toward the streak.
             var settings = await _context.UserSettings.FirstOrDefaultAsync(u => u.UserId == userId);
             SrsLeeches.OnUndo(card, lapsesAfterReview, settings);
             if (settings != null && lastLog.Kind != (int)SrsReviewKind.Reading)
             {
                 var day = DayContext(settings, timezoneOffsetMinutes, now);
-                await RevertDailyLimitsAsync(settings, lastLog, day.Options);
+                await RevertStreakAsync(settings, lastLog, day.Options);
             }
 
-            // Remove the log
+            if (lastLog.DeckStudyEntry is { } entry)
+                _context.SrsDeckStudyEntries.Remove(entry);
             _context.SrsReviewLogs.Remove(lastLog);
 
             try
@@ -547,7 +596,7 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
             days = Math.Clamp(days, 1, 366);
 
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
@@ -644,63 +693,41 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
 
             // Fetch settings for limit info, streak and the user's day boundary
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
 
-            var availableCards = AvailableCards(userId, now);
-            var cardQuery = availableCards;
+            var cardQuery = AvailableCards(userId, now, languageId);
+            var cardCounts = await cardQuery
+                .GroupBy(card => card.Word.LanguageId)
+                .Select(g => new
+                {
+                    LanguageId = g.Key,
+                    Total = g.Count(),
+                    Learning = g.Count(card => card.IsLearning),
+                    New = g.Count(card => !card.IsLearning && card.LastReviewedAt == null),
+                    Young = g.Count(card => !card.IsLearning && card.LastReviewedAt != null &&
+                        card.Interval < SrsSchedulerSettings.MatureIntervalDays),
+                    Mature = g.Count(card => !card.IsLearning && card.LastReviewedAt != null &&
+                        card.Interval >= SrsSchedulerSettings.MatureIntervalDays),
+                    ReviewedToday = g.Count(card => card.LastReviewedAt >= day.TodayStartUtc)
+                })
+                .ToListAsync();
 
-            if (languageId.HasValue)
-            {
-                cardQuery = cardQuery.Where(scr => scr.Word.LanguageId == languageId.Value);
-            }
-
-            // Counted in the database: learning (0), new (1), young (2), mature (3).
-            var byGroup = await cardQuery
-                .GroupBy(c => c.IsLearning ? 0 : c.LastReviewedAt == null ? 1 : c.Interval < SrsSchedulerSettings.MatureIntervalDays ? 2 : 3)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(g => g.Key, g => g.Count);
-            var dueByGroup = await cardQuery
-                .Where(IsDue(now, day.TomorrowStartUtc))
-                .GroupBy(c => c.IsLearning ? 0 : c.LastReviewedAt == null ? 1 : 2)
-                .Select(g => new { g.Key, Count = g.Count() })
-                .ToDictionaryAsync(g => g.Key, g => g.Count);
-
-            int learningCards = byGroup.GetValueOrDefault(0);
-            int newCards = byGroup.GetValueOrDefault(1);
-            int youngCards = byGroup.GetValueOrDefault(2);
-            int matureCards = byGroup.GetValueOrDefault(3);
-            int dueLearnCount = dueByGroup.GetValueOrDefault(0);
-            int dueNewCount = dueByGroup.GetValueOrDefault(1);
-            int dueReviewCount = dueByGroup.GetValueOrDefault(2);
-
-            var reviewedToday = await cardQuery.CountAsync(c => c.LastReviewedAt >= day.TodayStartUtc);
+            var budgetsByDeck = await LoadDeckBudgetsAsync(userId, languageId, settings, day,
+                cardQuery.Where(IsDue(now, day.TomorrowStartUtc)), cardCounts.Select(c => c.LanguageId));
+            var budgets = budgetsByDeck.Values;
+            int dueLearnCount = budgets.Sum(budget => budget.Due.Learning);
+            int dueNewCount = budgets.Sum(budget => budget.Due.NewCards);
+            int dueReviewCount = budgets.Sum(budget => budget.Due.Reviews);
+            int reviewableNewCount = budgets.Sum(budget => budget.ReviewableNew);
+            int reviewableReviewCount = budgets.Sum(budget => budget.ReviewableReviews);
 
             var totalPhrases = await _context.SrsPhrases
                 .AsNoTracking()
                 .CountAsync(sp => sp.UserId == userId);
-
-            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
-
-            // Calculate reviewable counts (quota-aware) to match what GetDueCards would serve
-            int maxNew = SrsQueuePolicy.EffectiveMaxNew(settings?.SrsMaxNewCards);
-            int maxReviews = SrsQueuePolicy.EffectiveMaxReviews(settings?.SrsMaxReviews);
-            bool ignoreReviewLimit = settings?.SrsNewCardsIgnoreReviewLimit ?? false;
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
-            int dueReviewCountForLimits = languageId.HasValue && !ignoreReviewLimit && dueNewCount > 0 &&
-                remainingReviews > 0 && SrsQueuePolicy.RemainingNewByNewCap(maxNew, studiedNew) > 0
-                ? await CountScheduledReviewsAsync(availableCards.Where(IsDue(now, day.TomorrowStartUtc)))
-                : dueReviewCount;
-            int remainingNew = SrsQueuePolicy.RemainingNew(
-                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
-            int reviewableReviewCount = Math.Min(dueReviewCount, remainingReviews);
-            int reviewableNewCount = Math.Min(dueNewCount, remainingNew);
-            int reviewableCount = dueLearnCount + reviewableReviewCount + reviewableNewCount;
-            bool newCardsPausedByReviewLimit = SrsQueuePolicy.IsNewPausedByReviewLimit(
-                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, dueNewCount, ignoreReviewLimit);
 
             // True retention (last 30 days): how often graduated cards were remembered when
             // they came due. Learning steps and reading credit are left out, and Hard counts
@@ -722,24 +749,24 @@ namespace LinguaReadApi.Controllers
             return new SrsStatsDto
             {
                 DueCount = dueLearnCount + dueNewCount + dueReviewCount,
-                ReviewableCount = reviewableCount,
+                ReviewableCount = dueLearnCount + reviewableReviewCount + reviewableNewCount,
                 DueLearningCount = dueLearnCount,
                 DueReviewCount = dueReviewCount,
                 DueNewCount = dueNewCount,
                 ReviewableReviewCount = reviewableReviewCount,
                 ReviewableNewCount = reviewableNewCount,
-                NewCardsPausedByReviewLimit = newCardsPausedByReviewLimit,
-                TotalCards = learningCards + newCards + youngCards + matureCards,
-                NewCards = newCards,
-                LearningCards = learningCards,
-                YoungCards = youngCards,
-                MatureCards = matureCards,
+                NewCardsPausedByReviewLimit = budgets.Any(budget => budget.NewCardsPausedByReviewLimit),
+                TotalCards = cardCounts.Sum(c => c.Total),
+                NewCards = cardCounts.Sum(c => c.New),
+                LearningCards = cardCounts.Sum(c => c.Learning),
+                YoungCards = cardCounts.Sum(c => c.Young),
+                MatureCards = cardCounts.Sum(c => c.Mature),
                 TotalPhrases = totalPhrases,
-                ReviewedToday = reviewedToday,
-                MaxNewCards = maxNew,
-                MaxReviews = maxReviews,
-                StudiedNewCardsToday = studiedNew,
-                StudiedReviewsToday = studiedReviews,
+                ReviewedToday = cardCounts.Sum(c => c.ReviewedToday),
+                MaxNewCards = budgets.Sum(budget => budget.Limits.MaxNewCards),
+                MaxReviews = budgets.Sum(budget => budget.Limits.MaxReviews),
+                StudiedNewCardsToday = budgets.Sum(budget => budget.Studied.NewCards),
+                StudiedReviewsToday = budgets.Sum(budget => budget.Studied.Reviews),
                 CurrentStreak = StudyDay(settings) is { } lastStudyDay &&
                     lastStudyDay >= day.Today.AddDays(-1)
                     ? settings?.SrsCurrentStreak ?? 0 : 0,
@@ -823,7 +850,7 @@ namespace LinguaReadApi.Controllers
                 .FirstOrDefaultAsync(scr => scr.SrsCardReviewId == cardId && scr.UserId == userId);
             if (card == null) return NotFound();
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
-            card.BuriedUntil = DayContext(settings, timezoneOffsetMinutes, DateTime.UtcNow).TomorrowStartUtc;
+            card.BuriedUntil = DayContext(settings, timezoneOffsetMinutes, UtcNow).TomorrowStartUtc;
             await _context.SaveChangesAsync();
             return Ok(new { Message = "Card buried until tomorrow." });
         }
@@ -855,7 +882,7 @@ namespace LinguaReadApi.Controllers
             var userId = GetUserId();
             days = Math.Clamp(days, 1, 731);
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
-            var day = DayContext(settings, timezoneOffsetMinutes, DateTime.UtcNow);
+            var day = DayContext(settings, timezoneOffsetMinutes, UtcNow);
             var tz = day.Options.TimezoneOffsetMinutes;
             var dayStart = day.Options.DayStartHour;
             var startDate = SrsDay.DayStartUtc(day.Today.AddDays(-days), tz, dayStart);
@@ -889,7 +916,7 @@ namespace LinguaReadApi.Controllers
         public async Task<IActionResult> ApplyReadingCredit(int wordId, [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
             var card = await _context.SrsCardReviews
                 .FirstOrDefaultAsync(scr => scr.WordId == wordId && scr.UserId == userId);
 
@@ -918,7 +945,8 @@ namespace LinguaReadApi.Controllers
 
         // --- User-day helpers ---
 
-        private sealed record SrsDayContext(SrsSchedulerOptions Options, DateOnly Today, DateTime TodayStartUtc, DateTime TomorrowStartUtc);
+        private sealed record SrsDayContext(SrsSchedulerOptions Options, DateOnly Today, DateTime NowUtc,
+            DateTime TodayStartUtc, DateTime TomorrowStartUtc);
 
         private static SrsDayContext DayContext(UserSettings? settings, int timezoneOffsetMinutes, DateTime now)
         {
@@ -928,6 +956,7 @@ namespace LinguaReadApi.Controllers
             return new SrsDayContext(
                 options,
                 today,
+                now,
                 SrsDay.DayStartUtc(today, tz, options.DayStartHour),
                 SrsDay.DayStartUtc(today.AddDays(1), tz, options.DayStartHour));
         }
@@ -945,13 +974,63 @@ namespace LinguaReadApi.Controllers
                 || (!scr.IsLearning && scr.NextReviewAt < tomorrowStartUtc);
         }
 
-        private IQueryable<SrsCardReview> AvailableCards(Guid userId, DateTime now) =>
-            _context.SrsCardReviews.AsNoTracking()
+        private IQueryable<SrsCardReview> AvailableCards(Guid userId, DateTime now, int? languageId)
+        {
+            var cards = _context.SrsCardReviews.AsNoTracking()
                 .Where(card => card.UserId == userId && !card.IsSuspended)
                 .Where(card => card.BuriedUntil == null || card.BuriedUntil <= now);
+            return languageId is int id ? cards.Where(card => card.Word.LanguageId == id) : cards;
+        }
 
-        private static Task<int> CountScheduledReviewsAsync(IQueryable<SrsCardReview> dueCards) =>
-            dueCards.CountAsync(card => !card.IsLearning && card.LastReviewedAt != null);
+        private async Task<Dictionary<int, SrsDeckBudget>> LoadDeckBudgetsAsync(Guid userId, int? languageId,
+            UserSettings? settings, SrsDayContext day, IQueryable<SrsCardReview> dueCards,
+            IEnumerable<int>? otherDeckIds = null)
+        {
+            var due = await dueCards.GroupBy(card => card.Word.LanguageId)
+                .Select(g => new
+                {
+                    LanguageId = g.Key,
+                    Learning = g.Count(card => card.IsLearning),
+                    NewCards = g.Count(card => !card.IsLearning && card.LastReviewedAt == null),
+                    Reviews = g.Count(card => !card.IsLearning && card.LastReviewedAt != null)
+                })
+                .ToDictionaryAsync(g => g.LanguageId, g => new SrsDueCounts(g.Learning, g.NewCards, g.Reviews));
+
+            // Older reviews predate recorded study days. Use their timestamps and
+            // pre-review states to carry existing usage into the deck budgets.
+            var legacyUsage = _context.SrsReviewLogs.AsNoTracking()
+                .Where(log => log.UserId == userId && log.StudyDay == null
+                    && log.ReviewedAt >= day.TodayStartUtc && log.ReviewedAt < day.TomorrowStartUtc
+                    && log.Kind != (int)SrsReviewKind.Reading && !log.OldIsLearning
+                    && (log.OldLastReviewedAt == null || log.OldLastReviewedAt < day.TodayStartUtc))
+                .Select(log => new { log.SrsCardReview.Word.LanguageId, IsNewCard = log.OldLastReviewedAt == null });
+            var currentUsage = _context.SrsDeckStudyEntries.AsNoTracking()
+                .Where(entry => entry.UserId == userId && entry.StudyDay == day.Today)
+                .Select(entry => new { entry.LanguageId, entry.IsNewCard });
+            var usage = legacyUsage.Concat(currentUsage);
+            if (languageId is int requestedDeck)
+                usage = usage.Where(entry => entry.LanguageId == requestedDeck);
+            var studied = await usage.GroupBy(entry => entry.LanguageId)
+                .Select(g => new
+                {
+                    LanguageId = g.Key,
+                    NewCards = g.Count(entry => entry.IsNewCard),
+                    Reviews = g.Count(entry => !entry.IsNewCard)
+                })
+                .ToDictionaryAsync(g => g.LanguageId, g => new SrsStudyCounts(g.NewCards, g.Reviews));
+
+            var deckIds = languageId is int deckId ? new[] { deckId }
+                : due.Keys.Concat(studied.Keys).Concat(otherDeckIds ?? []).Distinct().ToArray();
+            if (deckIds.Length == 0) return new();
+
+            var decks = await _context.SrsDeckSettings.AsNoTracking()
+                .Where(deck => deck.UserId == userId && deckIds.Contains(deck.LanguageId))
+                .ToDictionaryAsync(deck => deck.LanguageId);
+            var defaults = SrsDeckLimits.FromDefaults(settings);
+            return deckIds.ToDictionary(id => id, id => new SrsDeckBudget(
+                defaults.WithOverrides(decks.GetValueOrDefault(id), day.Today, day.NowUtc),
+                studied.GetValueOrDefault(id), due.GetValueOrDefault(id)));
+        }
 
         private static DateOnly? StudyDay(UserSettings? settings) =>
             settings?.SrsDailyStudyDate is { } date ? DateOnly.FromDateTime(date) : null;
@@ -959,22 +1038,30 @@ namespace LinguaReadApi.Controllers
         private static DateTime AsStudyDate(DateOnly day) =>
             DateTime.SpecifyKind(day.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
 
-        private static (int New, int Reviews) StudiedOn(UserSettings? settings, DateOnly day) =>
-            StudyDay(settings) == day
-                ? (settings!.SrsDailyNewCardsStudied, settings.SrsDailyReviewsStudied)
-                : (0, 0);
-
-        /// <summary>
-        /// Advances the streak and daily new/review counters for a review that happened at
-        /// <paramref name="reviewedAt"/>. A card counts once per day, on its first review that day.
-        /// </summary>
-        private static void CountTowardDailyLimits(UserSettings settings, SrsCardSnapshot before, DateTime reviewedAt, SrsSchedulerOptions options)
+        private async Task<bool> ReviewedOnStudyDayAsync(SrsCardReview card, DateOnly studyDay, SrsSchedulerOptions options)
         {
-            var tz = options.TimezoneOffsetMinutes;
-            var reviewDay = SrsDay.UserDay(reviewedAt, tz, options.DayStartHour);
+            if (card.LastReviewedAt is not { } lastReviewedAt) return false;
+
+            var start = SrsDay.DayStartUtc(studyDay, options.TimezoneOffsetMinutes, options.DayStartHour);
+            var end = SrsDay.DayStartUtc(studyDay.AddDays(1), options.TimezoneOffsetMinutes, options.DayStartHour);
+            var recordedDays = await _context.SrsReviewLogs.AsNoTracking()
+                .Where(log => log.SrsCardReviewId == card.SrsCardReviewId &&
+                    (log.StudyDay == studyDay || (log.ReviewedAt >= start && log.ReviewedAt < end
+                        && (log.StudyDay == null || log.ReviewedAt == lastReviewedAt))))
+                .Select(log => log.StudyDay)
+                .ToListAsync();
+
+            // A legacy/imported card can have a last review timestamp without a log.
+            // A stamped log wins over the timestamp when the reviewing device changes zones.
+            return recordedDays.Any(day => day == studyDay || day == null)
+                || (recordedDays.Count == 0 && lastReviewedAt >= start && lastReviewedAt < end);
+        }
+
+        private static void AdvanceStreak(UserSettings settings, DateOnly reviewDay)
+        {
             var studyDay = StudyDay(settings);
 
-            // A late offline replay of an earlier day: those counters are gone, leave today's alone.
+            // A late offline replay can fill older history without moving today's streak backwards.
             if (studyDay is { } current && reviewDay < current) return;
 
             if (studyDay != reviewDay)
@@ -982,8 +1069,6 @@ namespace LinguaReadApi.Controllers
                 settings.SrsCurrentStreak = studyDay == reviewDay.AddDays(-1) ? settings.SrsCurrentStreak + 1 : 1;
                 settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, settings.SrsCurrentStreak);
                 settings.SrsDailyStudyDate = AsStudyDate(reviewDay);
-                settings.SrsDailyNewCardsStudied = 0;
-                settings.SrsDailyReviewsStudied = 0;
             }
             else if (settings.SrsCurrentStreak == 0)
             {
@@ -991,34 +1076,13 @@ namespace LinguaReadApi.Controllers
                 settings.SrsCurrentStreak = 1;
                 settings.SrsLongestStreak = Math.Max(settings.SrsLongestStreak, 1);
             }
-
-            bool firstReviewThatDay = before.LastReviewedAtUtc is not { } last
-                || SrsDay.UserDay(last, tz, options.DayStartHour) != reviewDay;
-            if (firstReviewThatDay)
-            {
-                // Learning/relearning steps carried over from an earlier day ignore daily limits (like Anki).
-                if (before.State == SrsCardState.New) settings.SrsDailyNewCardsStudied++;
-                else if (before.State == SrsCardState.Review) settings.SrsDailyReviewsStudied++;
-            }
         }
 
-        /// <summary>Reverses <see cref="CountTowardDailyLimits"/> for an undone review.</summary>
-        private async Task RevertDailyLimitsAsync(UserSettings settings, SrsReviewLog log, SrsSchedulerOptions options)
+        private async Task RevertStreakAsync(UserSettings settings, SrsReviewLog log, SrsSchedulerOptions options)
         {
             var tz = options.TimezoneOffsetMinutes;
-            var reviewDay = SrsDay.UserDay(log.ReviewedAt, tz, options.DayStartHour);
+            var reviewDay = log.StudyDay ?? SrsDay.UserDay(log.ReviewedAt, tz, options.DayStartHour);
             if (StudyDay(settings) != reviewDay) return;
-
-            bool wasFirstReviewThatDay = log.OldLastReviewedAt is not { } last
-                || SrsDay.UserDay(last, tz, options.DayStartHour) != reviewDay;
-            if (wasFirstReviewThatDay)
-            {
-                var stateBefore = SrsCardStates.Derive(log.OldIsLearning, log.OldHasEverGraduated, log.OldLastReviewedAt);
-                if (stateBefore == SrsCardState.New)
-                    settings.SrsDailyNewCardsStudied = Math.Max(0, settings.SrsDailyNewCardsStudied - 1);
-                else if (stateBefore == SrsCardState.Review)
-                    settings.SrsDailyReviewsStudied = Math.Max(0, settings.SrsDailyReviewsStudied - 1);
-            }
 
             // Revert the streak if this undo leaves no other reviews that day
             var dayStartUtc = SrsDay.DayStartUtc(reviewDay, tz, options.DayStartHour);
@@ -1027,25 +1091,33 @@ namespace LinguaReadApi.Controllers
                 l.UserId == log.UserId
                 && l.SrsReviewLogId != log.SrsReviewLogId
                 && l.Kind != (int)SrsReviewKind.Reading
-                && l.ReviewedAt >= dayStartUtc && l.ReviewedAt < nextDayStartUtc);
+                && (l.StudyDay == reviewDay ||
+                    (l.StudyDay == null && l.ReviewedAt >= dayStartUtc && l.ReviewedAt < nextDayStartUtc)));
             if (hasOtherReviewsThatDay) return;
 
-            var previousLog = await _context.SrsReviewLogs
+            var previous = await _context.SrsReviewLogs
                 .AsNoTracking()
-                .Where(l => l.UserId == log.UserId && l.Kind != (int)SrsReviewKind.Reading && l.ReviewedAt < dayStartUtc)
-                .OrderByDescending(l => l.ReviewedAt)
+                .Where(l => l.UserId == log.UserId && l.Kind != (int)SrsReviewKind.Reading
+                    && (l.StudyDay < reviewDay || (l.StudyDay == null && l.ReviewedAt < dayStartUtc)))
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    RecordedDay = g.Max(l => l.StudyDay),
+                    LegacyReviewedAt = g.Max(l => l.StudyDay == null ? l.ReviewedAt : (DateTime?)null)
+                })
                 .FirstOrDefaultAsync();
-            DateOnly? previousDay = previousLog != null
-                ? SrsDay.UserDay(previousLog.ReviewedAt, tz, options.DayStartHour)
-                : null;
+            var previousDay = previous?.RecordedDay;
+            if (previous?.LegacyReviewedAt is { } legacyReviewedAt)
+            {
+                var legacyDay = SrsDay.UserDay(legacyReviewedAt, tz, options.DayStartHour);
+                if (previousDay == null || legacyDay > previousDay) previousDay = legacyDay;
+            }
 
             // Had a streak going before that day: just decrement. Otherwise it started that day.
             settings.SrsCurrentStreak = previousDay == reviewDay.AddDays(-1)
                 ? Math.Max(0, settings.SrsCurrentStreak - 1)
                 : 0;
             settings.SrsDailyStudyDate = previousDay is { } p ? AsStudyDate(p) : null;
-            settings.SrsDailyNewCardsStudied = 0;
-            settings.SrsDailyReviewsStudied = 0;
         }
 
         /// <summary>
@@ -1221,7 +1293,7 @@ namespace LinguaReadApi.Controllers
             [FromQuery] int timezoneOffsetMinutes = 0)
         {
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
             var thirtyDaysAgo = now.AddDays(-30);
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             var dayOptions = DayContext(settings, timezoneOffsetMinutes, now).Options;
@@ -1356,31 +1428,20 @@ namespace LinguaReadApi.Controllers
                 return BadRequest(ModelState);
 
             var userId = GetUserId();
-            var now = DateTime.UtcNow;
+            var now = UtcNow;
 
-            // 1. Load user settings for daily limits
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
-            var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
-            int effectiveMaxNew = SrsQueuePolicy.EffectiveMaxNew(settings?.SrsMaxNewCards);
-            int effectiveMaxReviews = SrsQueuePolicy.EffectiveMaxReviews(settings?.SrsMaxReviews);
             string reviewOrder = string.IsNullOrWhiteSpace(settings?.SrsReviewOrder)
                 ? "mix"
                 : settings!.SrsReviewOrder;
             string newCardOrder = SrsQueuePolicy.NormalizeNewCardOrder(settings?.SrsNewCardOrder);
-            bool ignoreReviewLimit = settings?.SrsNewCardsIgnoreReviewLimit ?? false;
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(effectiveMaxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
-            int remainingNewByNewCap = SrsQueuePolicy.RemainingNewByNewCap(effectiveMaxNew, studiedNew);
 
-            // 2. Fetch due cards with card type filter and daily limits
-            var dueCards = AvailableCards(userId, now).Where(IsDue(now, day.TomorrowStartUtc));
-            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0 && remainingReviews > 0)
-                ? await CountScheduledReviewsAsync(dueCards)
-                : 0;
-            int remainingNew = SrsQueuePolicy.RemainingNew(
-                effectiveMaxNew, effectiveMaxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
-
-            var baseQuery = dueCards.Where(scr => scr.Word.LanguageId == request.LanguageId);
+            var baseQuery = AvailableCards(userId, now, request.LanguageId).Where(IsDue(now, day.TomorrowStartUtc));
+            var budgets = await LoadDeckBudgetsAsync(userId, request.LanguageId, settings, day, baseQuery);
+            var budget = budgets[request.LanguageId];
+            int remainingNew = budget.RemainingNew;
+            int remainingReviews = budget.RemainingReviews;
 
             if (!string.IsNullOrEmpty(request.Status))
             {
@@ -1393,60 +1454,14 @@ namespace LinguaReadApi.Controllers
             // One micro-context per due card; cap directly at MaxWords (no pool/AI selection step).
             int poolSize = request.MaxWords;
 
-            // Fetch cards based on card type, respecting daily limits for the pool
-            var allDueCards = new List<SrsCardReview>();
-
-            if (cardType == "new")
-            {
-                allDueCards = await SelectNewCardsAsync(baseQuery, userId, newCardOrder, now, Math.Min(poolSize, remainingNew));
-            }
-            else if (cardType == "review")
-            {
-                // Learning cards + review cards
-                var learningCards = await baseQuery
-                    .Where(scr => scr.IsLearning)
-                    .OrderBy(scr => scr.NextReviewAt)
-                    .Take(poolSize)
-                    .Include(scr => scr.Word)
-                        .ThenInclude(w => w.Translation)
-                    .ToListAsync();
-                var reviewCards = remainingReviews > 0
-                    ? await baseQuery
-                        .Where(scr => !scr.IsLearning && scr.LastReviewedAt != null)
-                        .OrderBy(scr => scr.NextReviewAt)
-                        .Take(Math.Min(poolSize, remainingReviews))
-                        .Include(scr => scr.Word)
-                            .ThenInclude(w => w.Translation)
-                        .ToListAsync()
-                    : new List<SrsCardReview>();
-                allDueCards = learningCards.Concat(reviewCards).Take(poolSize).ToList();
-            }
-            else // "all"
-            {
-                // Learning cards (no limit)
-                var learningCards = await baseQuery
-                    .Where(scr => scr.IsLearning)
-                    .OrderBy(scr => scr.NextReviewAt)
-                    .Take(poolSize)
-                    .Include(scr => scr.Word)
-                        .ThenInclude(w => w.Translation)
-                    .ToListAsync();
-                // New cards (capped by remaining budget, ranked by configured new card order)
-                var newCards = remainingNew > 0
-                    ? await SelectNewCardsAsync(baseQuery, userId, newCardOrder, now, Math.Min(poolSize, remainingNew))
-                    : new List<SrsCardReview>();
-                // Review cards (capped by remaining budget)
-                var reviewCards = remainingReviews > 0
-                    ? await baseQuery
-                        .Where(scr => !scr.IsLearning && scr.LastReviewedAt != null)
-                        .OrderBy(scr => scr.NextReviewAt)
-                        .Take(Math.Min(poolSize, remainingReviews))
-                        .Include(scr => scr.Word)
-                            .ThenInclude(w => w.Translation)
-                        .ToListAsync()
-                    : new List<SrsCardReview>();
-                allDueCards = MergeByReviewOrder(reviewOrder, learningCards, newCards, reviewCards).Take(poolSize).ToList();
-            }
+            List<SrsCardReview> newCards = cardType == "review" || budget.ReviewableNew == 0 ? []
+                : await SelectNewCardsAsync(baseQuery, userId, newCardOrder, now, Math.Min(poolSize, remainingNew));
+            List<SrsCardReview> learningCards = cardType == "new" || budget.Due.Learning == 0 ? []
+                : await SelectLearningCardsAsync(baseQuery, poolSize);
+            List<SrsCardReview> reviewCards = cardType == "new" || budget.ReviewableReviews == 0 ? []
+                : await SelectReviewCardsAsync(baseQuery, Math.Min(poolSize, remainingReviews));
+            var allDueCards = MergeByReviewOrder(reviewOrder, learningCards, newCards, reviewCards)
+                .Take(poolSize).ToList();
 
             if (!allDueCards.Any())
                 return Ok(new SrsStoryGenerateResponse { MicroContexts = new(), RemainingNewBudget = remainingNew, RemainingReviewBudget = remainingReviews });
@@ -1596,6 +1611,34 @@ namespace LinguaReadApi.Controllers
         private const int TextWordStatsChunkSizeDefault = 500;
         private const int TextWordStatsChunkSizePostgres = 5000;
 
+        private static Task<List<SrsCardReview>> SelectLearningCardsAsync(IQueryable<SrsCardReview> query, int take) =>
+            SelectCardsByDueDateAsync(query.Where(card => card.IsLearning), take);
+
+        private static Task<List<SrsCardReview>> SelectReviewCardsAsync(IQueryable<SrsCardReview> query, int take) =>
+            SelectCardsByDueDateAsync(query.Where(card => !card.IsLearning && card.LastReviewedAt != null), take);
+
+        private static Task<List<SrsCardReview>> SelectCardsByDueDateAsync(IQueryable<SrsCardReview> query, int take) =>
+            query.OrderBy(card => card.NextReviewAt)
+                .ThenBy(card => card.SrsCardReviewId)
+                .Take(take)
+                .Include(card => card.Word)
+                    .ThenInclude(word => word.Translation)
+                .ToListAsync();
+
+        private static IEnumerable<T> TakeWithinDeckLimits<T>(IEnumerable<T> candidates,
+            Func<T, int> languageId, IReadOnlyDictionary<int, int> limits)
+        {
+            var taken = new Dictionary<int, int>();
+            foreach (var card in candidates)
+            {
+                int deck = languageId(card);
+                int count = taken.GetValueOrDefault(deck);
+                if (count >= limits.GetValueOrDefault(deck)) continue;
+                taken[deck] = count + 1;
+                yield return card;
+            }
+        }
+
         /// <summary>
         /// Selects up to <paramref name="take"/> untouched new cards from <paramref name="filteredQuery"/>
         /// ordered by <paramref name="newCardOrder"/> (defaulting to frequent words from recent reading).
@@ -1605,15 +1648,26 @@ namespace LinguaReadApi.Controllers
             Guid userId,
             string newCardOrder,
             DateTime now,
-            int take)
+            int take,
+            IReadOnlyDictionary<int, int>? deckLimits = null)
         {
-            if (take <= 0) return new List<SrsCardReview>();
+            if (take <= 0 || deckLimits is { Count: 0 }) return [];
 
             var newOnly = filteredQuery
                 .Where(scr => !scr.IsLearning && scr.LastReviewedAt == null);
+            if (deckLimits != null)
+            {
+                var allowedDecks = deckLimits.Keys.ToArray();
+                newOnly = newOnly.Where(card => allowedDecks.Contains(card.Word.LanguageId));
+                if (allowedDecks.Length == 1)
+                {
+                    take = Math.Min(take, deckLimits[allowedDecks[0]]);
+                    deckLimits = null;
+                }
+            }
 
             var normalizedOrder = SrsQueuePolicy.NormalizeNewCardOrder(newCardOrder);
-            if (normalizedOrder == SrsQueuePolicy.NewCardOrder.Oldest)
+            if (normalizedOrder == SrsQueuePolicy.NewCardOrder.Oldest && deckLimits == null)
             {
                 return await newOnly
                     .OrderBy(scr => scr.CreatedAt)
@@ -1630,6 +1684,7 @@ namespace LinguaReadApi.Controllers
                     scr.SrsCardReviewId,
                     scr.WordId,
                     scr.CreatedAt,
+                    scr.Word.LanguageId,
                     WordLastManualStatusAt = scr.Word.LastManualStatusAt
                 })
                 .ToListAsync();
@@ -1644,7 +1699,9 @@ namespace LinguaReadApi.Controllers
                 ? TextWordStatsChunkSizePostgres
                 : TextWordStatsChunkSizeDefault;
             var textStats = new Dictionary<int, (int Occurrences, DateTime? LastAccessedAt)>();
-            foreach (var chunk in rawCandidates.Select(c => c.WordId).Distinct().Chunk(chunkSize))
+            var wordsToRank = normalizedOrder == SrsQueuePolicy.NewCardOrder.Oldest
+                ? Enumerable.Empty<int>() : rawCandidates.Select(c => c.WordId).Distinct();
+            foreach (var chunk in wordsToRank.Chunk(chunkSize))
             {
                 var wordIdBatch = chunk.ToList();
                 var batchStats = await _context.TextWords
@@ -1679,7 +1736,13 @@ namespace LinguaReadApi.Controllers
                     stat.LastAccessedAt);
             });
 
-            var selectedIds = SrsQueuePolicy.OrderNewCardIds(candidates, normalizedOrder, now, take);
+            var selectedIds = SrsQueuePolicy.OrderNewCardIds(
+                candidates, normalizedOrder, now, deckLimits == null ? take : rawCandidates.Count);
+            if (deckLimits != null)
+            {
+                var languageByCard = rawCandidates.ToDictionary(card => card.SrsCardReviewId, card => card.LanguageId);
+                selectedIds = TakeWithinDeckLimits(selectedIds, id => languageByCard[id], deckLimits).Take(take).ToList();
+            }
             if (selectedIds.Count == 0) return new List<SrsCardReview>();
 
             // A card may have changed while its occurrence counts were being gathered.
@@ -1912,6 +1975,39 @@ namespace LinguaReadApi.Controllers
         public string? TextTitle { get; set; }
     }
 
+    public class SrsDeckSettingsUpdateDto
+    {
+        [Range(0, 9999)]
+        public int? MaxNewCards { get; set; }
+
+        [Range(1, 9999)]
+        public int? MaxReviews { get; set; }
+
+        public bool? NewCardsIgnoreReviewLimit { get; set; }
+
+        [Range(0, 9999)]
+        public int? TodayMaxNewCards { get; set; }
+
+        [Range(1, 9999)]
+        public int? TodayMaxReviews { get; set; }
+
+        /// <summary>The SRS day returned by GET, required when saving a today-only limit.</summary>
+        public DateOnly? StudyDay { get; set; }
+    }
+
+    public class SrsDeckSettingsDto
+    {
+        public DateOnly StudyDay { get; set; }
+        public int DefaultMaxNewCards { get; set; }
+        public int DefaultMaxReviews { get; set; }
+        public bool DefaultNewCardsIgnoreReviewLimit { get; set; }
+        public int? MaxNewCards { get; set; }
+        public int? MaxReviews { get; set; }
+        public bool? NewCardsIgnoreReviewLimit { get; set; }
+        public int? TodayMaxNewCards { get; set; }
+        public int? TodayMaxReviews { get; set; }
+    }
+
     public class SrsStatsDto
     {
         public int DueCount { get; set; }
@@ -1926,7 +2022,7 @@ namespace LinguaReadApi.Controllers
         public int ReviewableReviewCount { get; set; }
         /// <summary>New cards available to introduce today after daily limits and review-limit guardrails.</summary>
         public int ReviewableNewCount { get; set; }
-        /// <summary>True when new cards are paused today because due reviews filled the daily review cap.</summary>
+        /// <summary>True when at least one included deck has new cards paused by its review limit.</summary>
         public bool NewCardsPausedByReviewLimit { get; set; }
         public int TotalCards { get; set; }
         public int NewCards { get; set; }
@@ -1938,7 +2034,9 @@ namespace LinguaReadApi.Controllers
         public int TotalPhrases { get; set; }
         public int ReviewedToday { get; set; }
         
+        /// <summary>Effective new-card limit, summed across included decks when no language is selected.</summary>
         public int MaxNewCards { get; set; }
+        /// <summary>Effective review limit, summed across included decks when no language is selected.</summary>
         public int MaxReviews { get; set; }
         public int StudiedNewCardsToday { get; set; }
         public int StudiedReviewsToday { get; set; }

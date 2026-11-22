@@ -1,6 +1,6 @@
 import { safeLocalStorageSetItem } from '../utils/storage';
 import { isInteractiveKeyboardTarget } from '../utils/keyboard';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Container, Card, Button, Spinner, Alert, Form, Row, Col, Badge, ProgressBar, Modal } from 'react-bootstrap';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { SettingsContext } from '../contexts/SettingsContext';
@@ -22,6 +22,7 @@ import {
   type WordStatus
 } from '../types/wordStatus';
 import ClozeReviewCard from '../components/srs/ClozeReviewCard';
+import SrsDeckOptions from '../components/srs/SrsDeckOptions';
 import { sentenceContainsTerm, splitSentenceAroundTerm } from '../utils/readerText';
 import './SrsReview.css';
 
@@ -192,6 +193,7 @@ const SrsReview = () => {
   const [heatmap, setHeatmap] = useState<HeatmapEntry[]>([]);
   const [analytics, setAnalytics] = useState<SrsAnalytics | null>(null);
   const [suspendedCards, setSuspendedCards] = useState<SrsSuspendedCards>([]);
+  const statsRequest = useRef(0);
 
   // Shown briefly when a review moved the word's reader status (word-status sync)
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
@@ -208,27 +210,34 @@ const SrsReview = () => {
   // Load stats when language changes
   const loadStats = useCallback(async () => {
     if (!selectedLanguage) return;
+    const request = statsRequest.current + 1;
+    statsRequest.current = request;
     setStatsLoading(true);
     try {
       const data = await getSrsStats(selectedLanguage);
+      if (request !== statsRequest.current) return;
       setStats(data);
-      const forecastData = await getSrsForecast(selectedLanguage, 14);
-      setForecast(forecastData);
-      const heatmapData = await getSrsHeatmap(365);
-      setHeatmap(heatmapData);
-      const analyticsData = await getSrsAnalytics(selectedLanguage);
-      setAnalytics(analyticsData);
-      const suspendedData = await getSrsSuspendedCards(selectedLanguage);
-      setSuspendedCards(suspendedData ?? []);
+      const [forecastData, heatmapData, analyticsData, suspendedData] = await Promise.allSettled([
+        getSrsForecast(selectedLanguage, 14),
+        getSrsHeatmap(365),
+        getSrsAnalytics(selectedLanguage),
+        getSrsSuspendedCards(selectedLanguage),
+      ]);
+      if (request !== statsRequest.current) return;
+      if (forecastData.status === 'fulfilled') setForecast(forecastData.value);
+      if (heatmapData.status === 'fulfilled') setHeatmap(heatmapData.value);
+      if (analyticsData.status === 'fulfilled') setAnalytics(analyticsData.value);
+      if (suspendedData.status === 'fulfilled') setSuspendedCards(suspendedData.value ?? []);
     } catch (err) {
       console.error('Failed to load stats, forecast, or heatmap:', err);
     } finally {
-      setStatsLoading(false);
+      if (request === statsRequest.current) setStatsLoading(false);
     }
   }, [selectedLanguage]);
 
   useEffect(() => {
     loadStats();
+    return () => { statsRequest.current++; };
   }, [loadStats]);
 
   const openSettingsModal = () => {
@@ -383,11 +392,9 @@ const SrsReview = () => {
 
   // The due cards are all in the selected language; its substitutions are part of
   // how terms are keyed, so sentence matching needs them too.
-  const matchingLanguageCode = languages.find(lang => String(lang.languageId) === selectedLanguage)?.code;
-  const languageSubstitutions = useMemo(
-    () => languages.find((lang) => String(lang.languageId) === selectedLanguage)?.characterSubstitutions ?? null,
-    [languages, selectedLanguage]
-  );
+  const selectedDeck = languages.find(lang => String(lang.languageId) === selectedLanguage);
+  const matchingLanguageCode = selectedDeck?.code;
+  const languageSubstitutions = selectedDeck?.characterSubstitutions ?? null;
 
   // Same normalized match as the highlight: a raw includes() misses a mined
   // sentence with a soft hyphen, a decomposed accent or a curly apostrophe.
@@ -537,8 +544,14 @@ const SrsReview = () => {
 
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const langId = e.target.value;
+    if (langId === selectedLanguage) return;
     setSelectedLanguage(langId);
     safeLocalStorageSetItem('srsSelectedLanguage', langId);
+    setStats(null);
+    setStatsLoading(false);
+    setForecast([]);
+    setAnalytics(null);
+    setSuspendedCards([]);
     setSessionStarted(false);
     setSessionComplete(false);
     setQueue({ unseen: [], learning: [] });
@@ -939,8 +952,11 @@ const SrsReview = () => {
         <Card className="shadow-sm srs-setup-card">
           <Card.Body>
             <p className="text-muted small">A session of up to {sessionLimit} cards · about {Math.max(1, Math.round(sessionLimit / 4))} minutes. Learning cards may repeat.</p>
-            <Form.Group className="mb-3">
-              <Form.Label>Language</Form.Label>
+            <Form.Group className="mb-3" controlId="srs-review-language">
+              <div className="d-flex align-items-center justify-content-between mb-1">
+                <Form.Label className="mb-0">Language</Form.Label>
+                <SrsDeckOptions language={selectedDeck} onSaved={loadStats} />
+              </div>
               <Form.Select value={selectedLanguage} onChange={handleLanguageChange}>
                 <option value="">-- Select Language --</option>
                 {languages.map((lang) => (
@@ -999,7 +1015,7 @@ const SrsReview = () => {
                 variant="outline-secondary"
                 size="lg"
                 onClick={openSettingsModal}
-                title="Deck Options"
+                title="Shared SRS options"
               >
                 ⚙️ Options
               </Button>
@@ -1011,7 +1027,7 @@ const SrsReview = () => {
         {/* Settings Modal */}
         <Modal show={showSettingsModal} onHide={closeSettingsModal} centered>
           <Modal.Header closeButton>
-            <Modal.Title>SRS Options</Modal.Title>
+            <Modal.Title>Shared SRS options</Modal.Title>
           </Modal.Header>
           <Modal.Body>
             {settingsError && (
@@ -1019,6 +1035,7 @@ const SrsReview = () => {
                 {settingsError}
               </Alert>
             )}
+            <p className="text-muted small">Each language uses these daily limits by default. Select a language and open Deck limits to customize them.</p>
             <Form.Group className="mb-3" controlId="srs-max-new-cards">
               <Form.Label>Maximum New Cards / Day</Form.Label>
               <Form.Control
@@ -1343,7 +1360,7 @@ const SrsReview = () => {
                     {showNewPausedByReviewLimit && <div>New cards paused today while scheduled reviews fill your daily limit</div>}
                     {showNewLimitReached && <div>New card limit reached ({stats.maxNewCards}/day)</div>}
                     {showReviewLimitReached && <div>Review limit reached ({stats.maxReviews}/day)</div>}
-                    <div className="text-muted mt-1">Adjust limits in SRS Options to review more.</div>
+                    <div className="text-muted mt-1">Open Deck limits from setup to adjust this language’s limits.</div>
                   </Alert>
                 )}
               </>

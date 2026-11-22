@@ -55,7 +55,7 @@ const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({
     }
     if (saved > 0) {
       return newCardsPausedByReviewLimit
-        ? `New cards paused while reviews fill today's limit. ${saved.toLocaleString()} saved ${saved === 1 ? 'word' : 'words'} waiting for future sessions.`
+        ? `New cards paused while reviews fill their deck limits. ${saved.toLocaleString()} saved ${saved === 1 ? 'word' : 'words'} waiting for future sessions.`
         : `${saved.toLocaleString()} saved ${saved === 1 ? 'word' : 'words'} waiting for future sessions.`;
     }
     return null;
@@ -70,7 +70,7 @@ const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({
         ) : count > 0 ? (
           <>
             <h2>Cards due for review</h2>
-            <p className="text-muted">Choose how many cards to review in this session.</p>
+            <p className="text-muted">Choose a session size, then select a language.</p>
             <div className="home-review-due">{count.toLocaleString()} due</div>
             {breakdownParts.length > 0 && (
               <div className="home-review-breakdown" data-testid="srs-due-breakdown">
@@ -79,11 +79,11 @@ const SrsDueWidget: React.FC<SrsDueWidgetProps> = ({
             )}
             {newCardsPausedByReviewLimit && (
               <div className="home-review-note" data-testid="srs-review-limit-note">
-                New cards paused while reviews fill today's limit.
+                Some decks have paused new cards while reviews fill their daily limits.
               </div>
             )}
             <LinkContainer to={{ pathname: '/srs', search: `?limit=${target}` }}>
-              <Button variant="primary" className="home-review-start">Review {target} {target === 1 ? 'card' : 'cards'} <i className="bi bi-arrow-right" aria-hidden="true" /></Button>
+              <Button variant="primary" className="home-review-start">Review up to {target} {target === 1 ? 'card' : 'cards'} <i className="bi bi-arrow-right" aria-hidden="true" /></Button>
             </LinkContainer>
             <div className="home-review-options">
               <Form.Label htmlFor="home-session-size">Session size</Form.Label>

@@ -158,7 +158,7 @@ namespace LinguaReadApi.Models
         [StringLength(8000)]
         public string? CustomSummarizationPrompt { get; set; }
 
-        // SRS Limits & Preferences
+        // Shared SRS defaults and account-wide preferences
         public int SrsMaxNewCards { get; set; } = 20;
         public int SrsMaxReviews { get; set; } = 200;
         public string SrsReviewOrder { get; set; } = "mix"; // "mix", "new_first", "reviews_first"
@@ -171,8 +171,10 @@ namespace LinguaReadApi.Models
         // claim on SrsMaxReviews and pause new introductions once the daily review cap is filled.
         public bool SrsNewCardsIgnoreReviewLimit { get; set; } = false;
 
-        // SRS Daily Tracking
+        // The last study day for the account-wide streak.
         public DateTime? SrsDailyStudyDate { get; set; }
+
+        // Legacy account-wide counters. Decks track their own study usage.
         public int SrsDailyNewCardsStudied { get; set; } = 0;
         public int SrsDailyReviewsStudied { get; set; } = 0;
 

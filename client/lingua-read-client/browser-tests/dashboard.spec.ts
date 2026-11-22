@@ -129,7 +129,7 @@ for (const count of [0, 1, 12, 12_345]) {
       for (const size of [50, 10, 200, 25, 100]) {
         if (size !== 50) await sessionSize.selectOption(String(size));
         const target = Math.min(count, size);
-        const action = review.getByRole('button', { name: `Review ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true });
+        const action = review.getByRole('button', { name: `Review up to ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true });
         await expect(action).toBeVisible();
         await expectTextFits(action);
         await expectInside(action, review.locator('.card-body'));
@@ -139,7 +139,7 @@ for (const count of [0, 1, 12, 12_345]) {
       await expectPageFits(page);
       await sessionSize.selectOption('10');
       const target = Math.min(count, 10);
-      await activate(review.getByRole('button', { name: `Review ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true }), page);
+      await activate(review.getByRole('button', { name: `Review up to ${target} ${target === 1 ? 'card' : 'cards'}`, exact: true }), page);
       await expect(page).toHaveURL(new RegExp(`/srs\\?limit=${target}$`));
       await expect(page.getByTestId('route-destination')).toHaveText(`/srs?limit=${target}`);
     });

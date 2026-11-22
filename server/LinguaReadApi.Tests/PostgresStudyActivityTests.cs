@@ -440,6 +440,9 @@ public class PostgresStudyActivityTests
         Assert.Null(await c.Words.Select(w => w.LastEditedAt).SingleAsync());
         Assert.Null(await c.Words.Select(w => w.LastManualStatusAt).SingleAsync());
         Assert.Null(await c.SrsReviewLogs.Select(l => l.WordStatusIntentAt).SingleAsync());
+        Assert.Null(await c.SrsReviewLogs.Select(l => l.StudyDay).SingleAsync());
+        Assert.Empty(await c.SrsDeckStudyEntries.ToListAsync());
+        Assert.Empty(await c.SrsDeckSettings.ToListAsync());
         Assert.Empty(await c.LessonStudyEvents.ToListAsync());
         Assert.Equal(beforeData, await Snapshot(c));
         await migrator.MigrateAsync(before); // Empty ledger can be removed.
@@ -507,7 +510,8 @@ public class PostgresStudyActivityTests
         c.ChangeTracker.Clear();
         var words = await c.Words.Select(w => new { w.WordId, w.UserId, w.LanguageId, w.Term, w.Status, w.CreatedAt }).ToArrayAsync();
         var reviewLogs = await c.Database.SqlQueryRaw<string>("""
-            SELECT (to_jsonb(log) - 'WordStatusIntentAt')::text AS "Value" FROM "SrsReviewLogs" log ORDER BY "SrsReviewLogId"
+            SELECT (to_jsonb(log) - 'WordStatusIntentAt' - 'StudyDay')::text AS "Value"
+            FROM "SrsReviewLogs" log ORDER BY "SrsReviewLogId"
             """).ToArrayAsync();
         Array[] rows = [await c.WordTranslations.ToArrayAsync(), await c.SrsPhrases.ToArrayAsync(),
             await c.SrsCardReviews.ToArrayAsync(), await c.UserActivities.ToArrayAsync()];

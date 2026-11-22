@@ -105,9 +105,7 @@ public class OpenAiCompatibleChatClientTests
             Json(HttpStatusCode.BadRequest, """{"error":{"message":"Unsupported parameter: 'max_tokens'","code":"unsupported_parameter"}}"""),
             Json(HttpStatusCode.OK, Completion("ok")));
         var request = Request("gpt");
-        request.Temperature = 0.3;
         request.MaxTokens = 65535;
-        request.TopP = 1.0;
         request.Thinking = new DeepSeekThinkingOptions { Type = "disabled" };
 
         var result = await CreateClient(handler).CompleteAsync(Connection("openai", model: "gpt"), request, "test");
@@ -304,14 +302,19 @@ public class OpenAiCompatibleChatClientTests
     [Fact]
     public async Task ListModels_AcceptsABareArray_AndReportsErrors()
     {
-        var ok = new ScriptedHandler(Json(HttpStatusCode.OK, """[{"id":"llama3"}]"""));
+        var ok = new ScriptedHandler(Json(HttpStatusCode.OK, """[{"id":"models/llama3"}]"""));
         var (models, _) = await CreateClient(ok).ListModelsAsync(Connection("custom", key: null, model: "x", baseUrl: "http://localhost:11434/v1"));
-        Assert.Equal(new[] { "llama3" }, models);
+        Assert.Equal(new[] { "models/llama3" }, models);
 
         var unauthorized = new ScriptedHandler(Json(HttpStatusCode.Unauthorized, """{"error":{"message":"bad key"}}"""));
         var (none, error) = await CreateClient(unauthorized).ListModelsAsync(Connection("openai", model: "x"));
         Assert.Empty(none);
         Assert.Equal("Unauthorized (bad key)", error);
+
+        var invalid = new ScriptedHandler(Json(HttpStatusCode.OK, "null"));
+        var (invalidModels, invalidError) = await CreateClient(invalid).ListModelsAsync(Connection("openai", model: "x"));
+        Assert.Empty(invalidModels);
+        Assert.Equal("The provider's model list has an unexpected format.", invalidError);
     }
 
     // --- helpers ---
@@ -332,7 +335,6 @@ public class OpenAiCompatibleChatClientTests
     {
         Model = model,
         Messages = new[] { new ChatMessage { Role = "user", Content = "Translate: Olá" } },
-        Temperature = 0.3,
         MaxTokens = 1024
     };
 

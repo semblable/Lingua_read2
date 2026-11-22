@@ -7,14 +7,17 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace LinguaReadApi.Tests;
 
 public class StoryGenerationControllerTests
 {
-    [Fact]
-    public async Task GenerateStory_UsesCustomPrompt_WhenAnAiProviderIsSelected()
+    [Theory]
+    [InlineData("deepseek")]
+    [InlineData("google")]
+    public async Task GenerateStory_UsesTheSavedCustomPrompt(string provider)
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
@@ -22,14 +25,14 @@ public class StoryGenerationControllerTests
         context.UserSettings.Add(new UserSettings
         {
             UserId = userId,
-            AiProvider = "deepseek",
+            AiProvider = provider,
             CustomStoryPrompt = "CUSTOM {level} {language} {prompt} {maxLength}",
             CreatedAt = DateTime.UtcNow
         });
         await context.SaveChangesAsync();
 
         var fakeService = new FakeStoryGenerationService();
-        var controller = CreateController(context, userId, fakeService);
+        var controller = CreateController(context, userId, new FakeStoryFactory(fakeService));
 
         await controller.GenerateStory(new StoryGenerationRequest
         {
@@ -43,35 +46,23 @@ public class StoryGenerationControllerTests
     }
 
     [Fact]
-    public async Task GenerateStory_IgnoresCustomPrompt_WhenBuiltInGeminiIsSelected()
+    public async Task GenerateStory_MissingProviderSetup_ReturnsBadRequest()
     {
         await using var context = CreateContext();
         var userId = Guid.NewGuid();
-        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
-        context.UserSettings.Add(new UserSettings
-        {
-            UserId = userId,
-            AiProvider = "gemini",
-            CustomStoryPrompt = "CUSTOM {level} {language} {prompt} {maxLength}",
-            CreatedAt = DateTime.UtcNow
-        });
-        await context.SaveChangesAsync();
+        var factory = new Mock<IStoryGenerationServiceFactory>();
+        factory.Setup(f => f.GetServiceForUserAsync(userId))
+            .ThrowsAsync(new TranslationProviderNotConfiguredException("Google Gemini", "Add a key in Settings."));
+        var controller = CreateController(context, userId, factory.Object);
 
-        var fakeService = new FakeStoryGenerationService();
-        var controller = CreateController(context, userId, fakeService);
-
-        await controller.GenerateStory(new StoryGenerationRequest
+        var result = await controller.GenerateStory(new StoryGenerationRequest
         {
             Prompt = "a robot dog",
-            Language = "Spanish",
-            Level = "beginner",
-            MaxLength = 300
+            Language = "Spanish"
         });
 
-        Assert.NotNull(fakeService.LastPrompt);
-        Assert.DoesNotContain("CUSTOM", fakeService.LastPrompt);
-        Assert.Contains("Write a beginner level story in Spanish about: a robot dog", fakeService.LastPrompt);
-        Assert.Contains("approximately 300 words", fakeService.LastPrompt);
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result.Result);
+        Assert.Contains("Add a key in Settings.", System.Text.Json.JsonSerializer.Serialize(badRequest.Value));
     }
 
     [Fact]
@@ -83,7 +74,7 @@ public class StoryGenerationControllerTests
         await context.SaveChangesAsync();
 
         var fakeService = new FakeStoryGenerationService();
-        var controller = CreateController(context, userId, fakeService);
+        var controller = CreateController(context, userId, new FakeStoryFactory(fakeService));
 
         await controller.GenerateStory(new StoryGenerationRequest
         {
@@ -100,10 +91,10 @@ public class StoryGenerationControllerTests
     private static StoryGenerationController CreateController(
         AppDbContext context,
         Guid userId,
-        IStoryGenerationService fakeService)
+        IStoryGenerationServiceFactory factory)
     {
         return new StoryGenerationController(
-            new FakeStoryFactory(fakeService),
+            factory,
             context,
             NullLogger<StoryGenerationController>.Instance)
         {

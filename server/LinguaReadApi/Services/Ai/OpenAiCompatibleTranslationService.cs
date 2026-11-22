@@ -117,7 +117,6 @@ namespace LinguaReadApi.Services.Ai
             {
                 var explanationLanguage = await ResolveTargetCodeAsync(sourceLanguage, targetLanguage);
 
-                string defaultExplanationPrompt = SentenceExplanationPrompt.Build(text, sourceLanguage, explanationLanguage);
                 var explanationVars = new Dictionary<string, string?>
                 {
                     ["text"] = text,
@@ -127,7 +126,7 @@ namespace LinguaReadApi.Services.Ai
                 };
                 string prompt = AiTaskConfig.ResolvePromptOrDefault(
                     connection.Settings.CustomExplanationPrompt,
-                    defaultExplanationPrompt,
+                    AiPromptTemplates.SentenceExplanation,
                     explanationVars,
                     out var unknownExplanationPlaceholders);
                 if (unknownExplanationPlaceholders.Count > 0)
@@ -140,9 +139,7 @@ namespace LinguaReadApi.Services.Ai
                 {
                     Model = connection.ModelFor(AiTask.Explanation),
                     Messages = new[] { new ChatMessage { Role = "user", Content = prompt } },
-                    Temperature = 0.3,
-                    MaxTokens = 65535,
-                    TopP = 1.0
+                    MaxTokens = 65535
                 };
                 AiReasoningOptions.ApplyForTranslation(request, connection.Definition.ReasoningStyle, connection.Settings);
 
@@ -279,38 +276,12 @@ namespace LinguaReadApi.Services.Ai
         private async Task<string> TranslateSingleChunkAsync(string text, string sourceLanguage, string targetLanguage, AiProviderConnection connection, string model, bool includeSentenceTags)
         {
             var customPrompt = connection.Settings.CustomTranslationPrompt;
-            string defaultTaggedPrompt = $@"Translate the following text from {sourceLanguage} to {targetLanguage}, sentence by sentence.
-**Strict Instructions:**
-1. For EACH sentence in the original text:
-   - Output the original sentence wrapped EXACTLY like this: `<o s=""N"">Original Sentence</o>`
-   - Immediately follow it with its translation wrapped EXACTLY like this: `<t s=""N"">Translated Sentence</t>`
-   - Replace 'N' with the sentence number, starting from 1.
-2. Maintain ALL original formatting and punctuation within the sentences inside the tags.
-3. **CRITICAL:** Your response MUST contain ONLY the sequence of `<o s=""N"">...</o><t s=""N"">...</t>` pairs. Do NOT include ANY introductory text, concluding remarks, explanations, apologies, code fences, or markdown.
-4. Do NOT escape `<` or `>` and do NOT wrap output in any container tags.
-5. If the input has only one sentence, still output exactly one `<o>` + `<t>` pair.
-6. **Natural, idiomatic translation:** Convey meaning and tone in {targetLanguage}, not word-for-word glosses. For idioms, metaphors, and fixed expressions, use the natural equivalent in the target language. Avoid literal calques that sound wrong or shift meaning (e.g. Portuguese ""ganhar o mundo"" in culture/media contexts suggests global breakthrough or worldwide impact—prefer natural English such as ""take the world by storm"", ""make waves internationally"", or ""break through globally""; do not use ""conquer the world"" unless the source clearly implies conquest).
-
-Example Input Text:
-Hello world. How are you?
-
-Example Output:
-<o s=""1"">Hello world.</o><t s=""1"">Bonjour le monde.</t><o s=""2"">How are you?</o><t s=""2"">Comment allez-vous?</t>
-
-**Text to translate:**
-{text}";
-
-            string defaultPlainPrompt = $@"Translate the following sentence or short passage from {sourceLanguage} to {targetLanguage}.
-**Strict Instructions:**
-1. Return ONLY the translated text in {targetLanguage}.
-2. Do NOT include the original text.
-3. Do NOT use XML/HTML tags such as `<o>` or `<t>`.
-4. Do NOT add explanations, notes, quotes, code fences, or markdown.
-5. Preserve meaning, tone, and punctuation naturally in the target language.
-6. Translate idiomatically, not word-for-word. Avoid literal calques that sound unnatural or shift meaning.
-
-Text:
-{text}";
+            var vars = new Dictionary<string, string?>
+            {
+                ["text"] = text,
+                ["sourceLanguage"] = sourceLanguage,
+                ["targetLanguage"] = targetLanguage
+            };
 
             string prompt;
             if (includeSentenceTags)
@@ -319,17 +290,12 @@ Text:
                 {
                     _logger.LogInformation("Custom translation prompt provided but tagged-output path requires the structural <o>/<t> template. Ignoring override for full-text translation.");
                 }
-                prompt = defaultTaggedPrompt;
+                prompt = PromptTemplateRenderer.Render(AiPromptTemplates.FullTextTranslation, vars);
             }
             else
             {
-                var vars = new Dictionary<string, string?>
-                {
-                    ["text"] = text,
-                    ["sourceLanguage"] = sourceLanguage,
-                    ["targetLanguage"] = targetLanguage
-                };
-                prompt = AiTaskConfig.ResolvePromptOrDefault(customPrompt, defaultPlainPrompt, vars, out var unknownTranslationPlaceholders);
+                prompt = AiTaskConfig.ResolvePromptOrDefault(
+                    customPrompt, AiPromptTemplates.SentenceTranslation, vars, out var unknownTranslationPlaceholders);
                 if (unknownTranslationPlaceholders.Count > 0)
                 {
                     _logger.LogWarning("Custom translation prompt contains unknown placeholders: {Placeholders}. Known: text, sourceLanguage, targetLanguage.",
@@ -341,9 +307,7 @@ Text:
             {
                 Model = model,
                 Messages = new[] { new ChatMessage { Role = "user", Content = prompt } },
-                Temperature = 0.3,
-                MaxTokens = 65535,
-                TopP = 1.0
+                MaxTokens = 65535
             };
             AiReasoningOptions.ApplyForTranslation(request, connection.Definition.ReasoningStyle, connection.Settings);
 
@@ -373,21 +337,6 @@ Text:
             {
                 var finalTargetCode = await ResolveTargetCodeAsync(sourceLanguage, targetLanguage);
 
-                string defaultSelectionPrompt = $@"You are translating only a highlighted span from a sentence.
-Source language: {sourceLanguage}
-Target language: {finalTargetCode}
-
-Sentence context:
-{sentenceContext}
-
-Highlighted text to translate:
-{selectedText}
-
-Strict instructions:
-1. Translate ONLY the highlighted text, using the sentence context for meaning.
-2. Return ONLY the translated highlighted text.
-3. Do NOT include the original text, explanations, notes, or formatting.";
-
                 var selectionVars = new Dictionary<string, string?>
                 {
                     ["selectedText"] = selectedText,
@@ -398,7 +347,7 @@ Strict instructions:
                 };
                 string prompt = AiTaskConfig.ResolvePromptOrDefault(
                     connection.Settings.CustomTranslationPrompt,
-                    defaultSelectionPrompt,
+                    AiPromptTemplates.SelectionTranslation,
                     selectionVars,
                     out var unknownSelectionPlaceholders);
                 if (unknownSelectionPlaceholders.Count > 0)
@@ -411,9 +360,7 @@ Strict instructions:
                 {
                     Model = connection.ModelFor(AiTask.Translation),
                     Messages = new[] { new ChatMessage { Role = "user", Content = prompt } },
-                    Temperature = 0.2,
-                    MaxTokens = 1024,
-                    TopP = 1.0
+                    MaxTokens = 1024
                 };
                 AiReasoningOptions.ApplyForTranslation(request, connection.Definition.ReasoningStyle, connection.Settings);
 

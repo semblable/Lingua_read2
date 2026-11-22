@@ -18,21 +18,17 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between the built-in Gemini service and the user's AI provider
-    /// (UserSettings.AiProvider) for sentence translation
+    /// Binds sentence translation and explanation to the user's AI provider.
     /// </summary>
     public class TranslationServiceFactory : ITranslationServiceFactory
     {
-        private readonly GeminiTranslationService _geminiService;
         private readonly OpenAiCompatibleTranslationService _providerService;
         private readonly AppDbContext _context;
 
         public TranslationServiceFactory(
-            GeminiTranslationService geminiService,
             OpenAiCompatibleTranslationService providerService,
             AppDbContext context)
         {
-            _geminiService = geminiService;
             _providerService = providerService;
             _context = context;
         }
@@ -40,9 +36,7 @@ namespace LinguaReadApi.Services
         public async Task<ISentenceTranslationService> GetServiceForUserAsync(Guid userId)
         {
             var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
-            return connection != null
-                ? new ProviderTranslationServiceAdapter(_providerService, connection)
-                : _geminiService;
+            return new ProviderTranslationServiceAdapter(_providerService, connection);
         }
     }
 
@@ -162,20 +156,17 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between the built-in Gemini service and the user's AI provider for story generation
+    /// Binds story generation to the user's AI provider.
     /// </summary>
     public class StoryGenerationServiceFactory : IStoryGenerationServiceFactory
     {
-        private readonly GeminiStoryGenerationService _geminiService;
         private readonly OpenAiCompatibleStoryGenerationService _providerService;
         private readonly AppDbContext _context;
 
         public StoryGenerationServiceFactory(
-            GeminiStoryGenerationService geminiService,
             OpenAiCompatibleStoryGenerationService providerService,
             AppDbContext context)
         {
-            _geminiService = geminiService;
             _providerService = providerService;
             _context = context;
         }
@@ -183,9 +174,7 @@ namespace LinguaReadApi.Services
         public async Task<IStoryGenerationService> GetServiceForUserAsync(Guid userId)
         {
             var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
-            return connection != null
-                ? new ProviderStoryServiceAdapter(_providerService, connection)
-                : _geminiService;
+            return new ProviderStoryServiceAdapter(_providerService, connection);
         }
     }
 
@@ -218,20 +207,17 @@ namespace LinguaReadApi.Services
     }
 
     /// <summary>
-    /// Factory that selects between the built-in Gemini service and the user's AI provider for summarization
+    /// Binds summarization to the user's AI provider.
     /// </summary>
     public class SummarizationServiceFactory : ISummarizationServiceFactory
     {
-        private readonly GeminiSummarizationService _geminiService;
         private readonly OpenAiCompatibleSummarizationService _providerService;
         private readonly AppDbContext _context;
 
         public SummarizationServiceFactory(
-            GeminiSummarizationService geminiService,
             OpenAiCompatibleSummarizationService providerService,
             AppDbContext context)
         {
-            _geminiService = geminiService;
             _providerService = providerService;
             _context = context;
         }
@@ -239,9 +225,7 @@ namespace LinguaReadApi.Services
         public async Task<ISummarizationService> GetServiceForUserAsync(Guid userId)
         {
             var connection = await AiProviderResolver.ResolveActiveAsync(_context, userId);
-            return connection != null
-                ? new ProviderSummarizationServiceAdapter(_providerService, connection)
-                : _geminiService;
+            return new ProviderSummarizationServiceAdapter(_providerService, connection);
         }
     }
 

@@ -112,14 +112,18 @@ public class AiTaskConfigTests
     }
 
     [Fact]
-    public void ResolvePromptOrDefault_ReturnsDefault_WhenCustomNull()
+    public void ResolvePromptOrDefault_RendersTheDefaultTemplate_WhenCustomIsNull()
     {
         var result = AiTaskConfig.ResolvePromptOrDefault(
             null,
-            "DEFAULT",
-            new Dictionary<string, string?>());
+            "Translate {text} into {targetLanguage}.",
+            new Dictionary<string, string?>
+            {
+                ["text"] = "a literal {targetLanguage}",
+                ["targetLanguage"] = "French"
+            });
 
-        Assert.Equal("DEFAULT", result);
+        Assert.Equal("Translate a literal {targetLanguage} into French.", result);
     }
 
     [Fact]

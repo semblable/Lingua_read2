@@ -35,25 +35,20 @@ namespace LinguaReadApi.Services.Ai
 
         public static string ResolvePromptOrDefault(
             string? customTemplate,
-            string defaultPrompt,
+            string defaultTemplate,
             IReadOnlyDictionary<string, string?> vars)
         {
-            return ResolvePromptOrDefault(customTemplate, defaultPrompt, vars, out _);
+            return ResolvePromptOrDefault(customTemplate, defaultTemplate, vars, out _);
         }
 
         public static string ResolvePromptOrDefault(
             string? customTemplate,
-            string defaultPrompt,
+            string defaultTemplate,
             IReadOnlyDictionary<string, string?> vars,
             out IReadOnlyList<string> unknownPlaceholders)
         {
-            if (string.IsNullOrWhiteSpace(customTemplate))
-            {
-                unknownPlaceholders = System.Array.Empty<string>();
-                return defaultPrompt;
-            }
-
-            return PromptTemplateRenderer.Render(customTemplate, vars, out unknownPlaceholders);
+            var template = string.IsNullOrWhiteSpace(customTemplate) ? defaultTemplate : customTemplate;
+            return PromptTemplateRenderer.Render(template, vars, out unknownPlaceholders);
         }
     }
 }

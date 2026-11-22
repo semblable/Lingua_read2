@@ -67,9 +67,7 @@ namespace LinguaReadApi.Services.Ai
                 {
                     Model = model,
                     Messages = new[] { new ChatMessage { Role = "user", Content = prompt } },
-                    Temperature = 0.7,
-                    MaxTokens = effectiveMaxTokens,
-                    TopP = 0.95
+                    MaxTokens = effectiveMaxTokens
                 };
                 AiReasoningOptions.ApplyForStory(request, connection.Definition.ReasoningStyle, connection.Settings);
 

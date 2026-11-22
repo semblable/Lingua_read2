@@ -37,7 +37,7 @@ public class UserSettingsControllerTests
         Assert.Equal(5, dto.AutoTranslateWordStatus);
         Assert.True(dto.ReaderCharacterShortcutsEnabled);
         Assert.False(dto.ReaderStatusMarkersEnabled);
-        Assert.Equal("gemini", dto.AiProvider);
+        Assert.Equal("google", dto.AiProvider);
         Assert.Empty(dto.AiProviders);
         Assert.Empty(dto.AiProvidersWithApiKey);
 
@@ -597,6 +597,31 @@ public class UserSettingsControllerTests
         var json = System.Text.Json.JsonSerializer.Serialize(result.Value);
         Assert.DoesNotContain("sk-secret-value", json);
         Assert.Equal(new[] { "deepseek" }, Assert.IsType<UserSettingsDto>(result.Value).AiProvidersWithApiKey);
+    }
+
+    [Fact]
+    public async Task LegacyGeminiSelection_RequiresOptInBeforeUsingTheUsersGoogleKey()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "u", Email = "u@test.com" });
+        context.UserSettings.Add(new UserSettings { UserId = userId, AiProvider = "gemini" });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        var before = Assert.IsType<UserSettingsDto>((await controller.GetUserSettings()).Value);
+        Assert.Equal("none", before.AiProvider);
+        var result = await controller.UpdateUserSettings(new UpdateUserSettingsDto
+        {
+            AiProvider = "google",
+            AiApiKeys = new() { ["google"] = "gemini-key-for-test" }
+        });
+
+        var after = Assert.IsType<UserSettingsDto>(result.Value);
+        Assert.Equal("google", after.AiProvider);
+        Assert.Equal(new[] { "google" }, after.AiProvidersWithApiKey);
+        Assert.DoesNotContain("gemini-key-for-test", System.Text.Json.JsonSerializer.Serialize(after));
+        Assert.Equal("google", (await context.UserSettings.AsNoTracking().SingleAsync()).AiProvider);
     }
 
     [Theory]

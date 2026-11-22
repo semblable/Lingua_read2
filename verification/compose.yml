@@ -29,7 +29,6 @@ services:
       Auth__SetupToken: synthetic-operator-token
       ExternalWrites__Disabled: "true"
       DeepL__ApiKey: ""
-      Gemini__ApiKey: ""
     depends_on:
       db:
         condition: service_healthy

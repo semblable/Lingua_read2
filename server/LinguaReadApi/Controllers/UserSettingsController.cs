@@ -93,7 +93,6 @@ namespace LinguaReadApi.Controllers
                     DiscordTimezoneOffsetMinutes = 0,
                     HardcoverSyncEnabled = false,
                     HardcoverApiToken = null,
-                    AiProvider = AiProviderCatalog.BuiltInGemini,
                     OpenRouterReasoningEnabled = false,
                     OpenRouterReasoningEffort = "medium",
                     OpenRouterStoryReasoningEnabled = false,
@@ -158,7 +157,7 @@ namespace LinguaReadApi.Controllers
                 NewsImportEnabled = settings.NewsImportEnabled,
                 NewsArticlesPerFeedPerDay = settings.NewsArticlesPerFeedPerDay,
                 NewsDeleteUnreadAfterDays = settings.NewsDeleteUnreadAfterDays,
-                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
+                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? settings.AiProvider,
                 AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
                 AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
@@ -386,7 +385,8 @@ namespace LinguaReadApi.Controllers
                 var selection = AiProviderCatalog.NormalizeSelection(updateDto.AiProvider);
                 if (selection == null)
                 {
-                    return BadRequest(new { message = $"aiProvider must be one of: {string.Join(", ", AllAiProviderSelections())} (got '{updateDto.AiProvider}')." });
+                    var options = AiProviderCatalog.Providers.Select(p => p.Id).Prepend(AiProviderCatalog.Disabled);
+                    return BadRequest(new { message = $"aiProvider must be one of: {string.Join(", ", options)} (got '{updateDto.AiProvider}')." });
                 }
                 settings.AiProvider = selection;
             }
@@ -604,7 +604,7 @@ namespace LinguaReadApi.Controllers
                 NewsImportEnabled = settings.NewsImportEnabled,
                 NewsArticlesPerFeedPerDay = settings.NewsArticlesPerFeedPerDay,
                 NewsDeleteUnreadAfterDays = settings.NewsDeleteUnreadAfterDays,
-                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? AiProviderCatalog.BuiltInGemini,
+                AiProvider = AiProviderCatalog.NormalizeSelection(settings.AiProvider) ?? settings.AiProvider,
                 AiProviders = aiProviders.ToDictionary(p => p.Provider, AiProviderConfigDto.From),
                 AiProvidersWithApiKey = aiProviders.Where(p => !string.IsNullOrWhiteSpace(p.ApiKey)).Select(p => p.Provider).Order().ToList(),
                 OpenRouterReasoningEnabled = settings.OpenRouterReasoningEnabled,
@@ -645,9 +645,6 @@ namespace LinguaReadApi.Controllers
             var normalized = (value ?? "translation").Trim().ToLowerInvariant();
             return normalized is "translation" or "cloze" or "mixed" ? normalized : "translation";
         }
-
-        private static IEnumerable<string> AllAiProviderSelections() =>
-            new[] { AiProviderCatalog.BuiltInGemini }.Concat(AiProviderCatalog.Providers.Select(p => p.Id));
 
         /// <summary>
         /// Applies the per-provider settings and keys of an update to the user's provider rows,
@@ -1004,8 +1001,7 @@ namespace LinguaReadApi.Controllers
         public bool NewsImportEnabled { get; set; } = false;
         public int NewsArticlesPerFeedPerDay { get; set; } = 3;
         public int NewsDeleteUnreadAfterDays { get; set; } = 14;
-        // "gemini" (built-in) or an AiProviderCatalog id.
-        public string AiProvider { get; set; } = AiProviderCatalog.BuiltInGemini;
+        public string AiProvider { get; set; } = AiProviderCatalog.Google;
         // The settings of each provider the user has set up, by provider id.
         public Dictionary<string, AiProviderConfigDto> AiProviders { get; set; } = new();
         // Write-only secrets: only which providers have a key is returned, never the key.

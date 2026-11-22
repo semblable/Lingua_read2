@@ -72,6 +72,10 @@ namespace LinguaReadApi.Controllers
                     TargetLanguageCode = request.TargetLanguageCode
                 });
             }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
             catch (UnauthorizedAccessException)
             {
                 return Unauthorized();

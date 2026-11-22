@@ -49,16 +49,6 @@ namespace LinguaReadApi.Controllers
             _logger.LogInformation($"Story generation request received: {request.Prompt}, Language: {request.Language}");
 
             var userId = GetUserId();
-            var storyGenerationService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
-
-            // Build the full prompt — services are thin API clients
-            string defaultPrompt = $"Write a {request.Level} level story in {request.Language} about: {request.Prompt}\n\n" +
-                                   $"Requirements:\n" +
-                                   $"- Write approximately {request.MaxLength} words\n" +
-                                   $"- Use vocabulary and grammar appropriate for {request.Level} level learners\n" +
-                                   $"- Include diverse sentence structures\n" +
-                                   $"- Use everyday vocabulary with occasional new words for learning\n" +
-                                   $"- Return ONLY the story with no additional text or explanations";
 
             var userSettings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId);
             var storyVars = new Dictionary<string, string?>
@@ -69,15 +59,9 @@ namespace LinguaReadApi.Controllers
                 ["maxLength"] = request.MaxLength.ToString(CultureInfo.InvariantCulture)
             };
 
-            // Custom prompts belong to the selectable AI providers; the built-in Gemini path keeps
-            // the built-in template.
-            string? customPrompt = AiProviderCatalog.IsExternal(userSettings?.AiProvider)
-                ? userSettings!.CustomStoryPrompt
-                : null;
-
             string fullPrompt = AiTaskConfig.ResolvePromptOrDefault(
-                customPrompt,
-                defaultPrompt,
+                userSettings?.CustomStoryPrompt,
+                AiPromptTemplates.Story,
                 storyVars,
                 out var unknownStoryPlaceholders);
             if (unknownStoryPlaceholders.Count > 0)
@@ -86,9 +70,16 @@ namespace LinguaReadApi.Controllers
                     string.Join(", ", unknownStoryPlaceholders));
             }
 
-            var generatedStory = await storyGenerationService.GenerateStoryAsync(fullPrompt, maxOutputTokens: 20000);
-
-            return Ok(new StoryGenerationResponse { GeneratedStory = generatedStory });
+            try
+            {
+                var storyGenerationService = await _storyGenerationServiceFactory.GetServiceForUserAsync(userId);
+                var generatedStory = await storyGenerationService.GenerateStoryAsync(fullPrompt, maxOutputTokens: 20000);
+                return Ok(new StoryGenerationResponse { GeneratedStory = generatedStory });
+            }
+            catch (TranslationProviderNotConfiguredException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         private Guid GetUserId()

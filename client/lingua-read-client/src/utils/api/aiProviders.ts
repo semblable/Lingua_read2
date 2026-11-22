@@ -6,6 +6,10 @@ import type { ResponseOf } from '../fetchApi';
 export type AiProviderInfo = ResponseOf<'/api/AiProviders', 'get'>[number];
 export type AiProviderTestResult = ResponseOf<'/api/AiProviders/{provider}/test', 'post'>;
 export type AiProviderModels = ResponseOf<'/api/AiProviders/{provider}/models', 'get'>;
+export type AiPromptDefaults = ResponseOf<'/api/AiProviders/prompt-defaults', 'get'>;
+
+export const getAiPromptDefaults = (signal: AbortSignal): Promise<AiPromptDefaults> =>
+  fetchApi<AiPromptDefaults>('/aiproviders/prompt-defaults', { signal });
 
 export const getAiProviders = async (): Promise<AiProviderInfo[]> => {
   return (await fetchApi<AiProviderInfo[]>('/aiproviders')) ?? [];
@@ -19,6 +23,6 @@ export const testAiProvider = async (provider: string): Promise<AiProviderTestRe
 };
 
 /** The model ids the provider offers, fetched with the saved key. */
-export const getAiProviderModels = async (provider: string): Promise<AiProviderModels> => {
-  return fetchApi<AiProviderModels>(`/aiproviders/${encodeURIComponent(provider)}/models`);
+export const getAiProviderModels = async (provider: string, signal?: AbortSignal): Promise<AiProviderModels> => {
+  return fetchApi<AiProviderModels>(`/aiproviders/${encodeURIComponent(provider)}/models`, { signal, cache: 'no-store' });
 };

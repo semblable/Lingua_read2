@@ -90,12 +90,11 @@ port binding with its HTTPS server ports (Compose 2.24.4 or later is required).
 ---
 
 ### 3. Translation & AI Provider Keys
-Enable third-party translation and content generation. While these are optional, leaving them blank disables the corresponding feature in the app.
+Configure server-level word translation below. Save credentials for AI generation and sentence translation in the app's AI Provider settings. [AI provider setup](#5-advanced-ai-translation--overrides)
 
 | Variable Name | Default Value | Description |
 | :--- | :--- | :--- |
 | `DEEPL_API_KEY` | *None* | DeepL API Key for word and phrase translation. High quality, free tier is recommended. |
-| `GEMINI_API_KEY`| *None* | Google Gemini API Key for automatic text generation and summarization. |
 
 ---
 
@@ -218,25 +217,29 @@ Synchronize book metadata, shelf progress, and reviews to [Hardcover.app](https:
 ---
 
 ### 5. Advanced AI Translation & Overrides
-Choose which AI service handles sentence and selection translation, sentence explanations, story generation and summaries. The default is the server's **built-in Gemini**; alternatively pick one of the OpenAI-compatible providers below and use your own key. Each provider keeps its own key and models, so you can switch between them without re-entering anything. A provider that is missing its key, model or (for Custom) server URL is not used: AI features fall back to the built-in Gemini, and Settings says what is missing.
+Choose a provider under **Settings → AI Provider** for sentence and selection translation, sentence explanations, story generation, and summaries. Google Gemini is selected by default. Each provider keeps its own key and model choices. AI features require the selected provider's key, a model, and a server URL for Custom. Custom can connect without a key.
+
+If your account used the shared `GEMINI_API_KEY`, choose **Settings → AI Provider → Google Gemini** and save your Gemini API key. Keys already saved in Google Gemini settings can be used after selecting the provider.
 
 | Provider | Default model | Notes |
 | :--- | :--- | :--- |
 | OpenRouter | *choose one* | Hundreds of models behind one key. Reasoning is sent as `reasoning.effort`. |
 | DeepSeek | `deepseek-flash` | Thinks by default; with reasoning off, LinguaRead asks it not to (faster, cheaper). Efforts map to DeepSeek's `low` / `high` / `max`. |
 | OpenAI | *choose one* | |
-| Google Gemini (your own key) | *choose one* | Gemini's OpenAI-compatible endpoint with an AI Studio key. |
+| Google Gemini | `gemini-3.5-flash-lite` | Use a Google AI Studio key. Standard text requests are available on eligible free-tier projects within their limits. [Gemini API pricing](https://aistudio.google.com/docs/pricing#gemini-3.5-flash-lite) · [Rate limits](https://aistudio.google.com/docs/rate-limits) |
 | Mistral | *choose one* | |
 | Groq | *choose one* | |
 | Custom (OpenAI-compatible) | *choose one* | Any server with an OpenAI chat-completions API: Ollama (`http://host:11434/v1`), LM Studio, vLLM, LiteLLM, Together, Fireworks... The key is optional. The server calls it, so it must be reachable from the server. |
 
 Custom AI URLs must resolve to public addresses. To use a local model, the server operator must allow its exact base URL: set `AI_PRIVATE_BASE_URL=http://host.docker.internal:11434/v1` in the Compose `.env`, or configure the `Ai:AllowedPrivateBaseUrls` array for a native installation. Enter the same base URL in provider settings. AI requests do not follow redirects.
 
-**Load models** in Settings lists the models your saved key can use. **Test Connection** sends a one-word request with the saved key and model. If a provider rejects an optional request parameter (such as `max_tokens` or `temperature` on some reasoning models), the request is retried once with just the model and the messages.
+Settings fetches the selected provider's current model list when a saved connection is available. Custom endpoints fetch model IDs when you select **Refresh models**. You can also use that button to refresh any other provider. This lookup reads model IDs and preserves your model choices. **Test Connection** sends a short prompt to the saved translation model and uses that model's quota or billing. AI requests use the model's sampling defaults.
+
+Open a default template under **AI prompts** to see what the app sends. **Edit a copy** fills the custom prompt field and saves an override when you edit the text. **Reset to default** clears your override. The translation override applies to sentences and highlighted selections. The story override applies to vocabulary practice when it includes `{wordList}` and should keep the JSON format shown in the vocabulary practice template. Full-text translation uses the sentence-pair template shown in Settings.
 
 | Setting Field | Default Value | Allowed / Type | Description |
 | :--- | :---: | :--- | :--- |
-| `AiProvider` | `"gemini"` | `gemini`, `openrouter`, `deepseek`, `openai`, `google`, `mistral`, `groq`, `custom` | The provider used for AI tasks. |
+| `AiProvider` | `"google"` | `none`, `google`, `openrouter`, `deepseek`, `openai`, `mistral`, `groq`, `custom` | The provider used for AI tasks. Choose `none` to turn off AI features. |
 | `AiApiKeys` | *None* | Provider → API key | Write-only per-provider keys, encrypted at rest; the API only reports which providers have one. An empty string removes a key. |
 | `AiProviders.{provider}.Model` | Provider's default | Model id | The provider's model for every AI task. |
 | `AiProviders.{provider}.BaseUrl` | *None* | `http(s)://` URL | Custom provider only: the base URL that `/chat/completions` is appended to. |

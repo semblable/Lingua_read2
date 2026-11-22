@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using LinguaReadApi.Services.Ai;
 
 namespace LinguaReadApi.Models
 {
@@ -131,7 +132,7 @@ namespace LinguaReadApi.Models
         // server-configured Gemini) or a catalog id (see Services.Ai.AiProviderCatalog) whose key and
         // models live in UserAiProviders. A catalog provider without a usable key falls back to Gemini.
         [StringLength(32)]
-        public string AiProvider { get; set; } = "gemini";
+        public string AiProvider { get; set; } = AiProviderCatalog.Google;
 
         // Reasoning settings for the catalog providers that can switch reasoning on and off
         // (OpenRouter, DeepSeek). The names predate the other providers.

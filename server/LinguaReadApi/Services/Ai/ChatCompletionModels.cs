@@ -15,17 +15,9 @@ namespace LinguaReadApi.Services.Ai
         [JsonPropertyName("messages")]
         public ChatMessage[] Messages { get; set; } = Array.Empty<ChatMessage>();
 
-        [JsonPropertyName("temperature")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public double? Temperature { get; set; }
-
         [JsonPropertyName("max_tokens")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public int? MaxTokens { get; set; }
-
-        [JsonPropertyName("top_p")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public double? TopP { get; set; }
 
         // OpenRouter only.
         [JsonPropertyName("reasoning")]

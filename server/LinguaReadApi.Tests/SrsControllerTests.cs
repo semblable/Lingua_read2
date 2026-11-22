@@ -187,13 +187,18 @@ public class SrsControllerTests
         Assert.Empty(response.MicroContexts);
     }
 
-    [Fact]
-    public async Task GenerateStoryFromDueWords_CallsAiServiceAndParsesJsonOutput()
+    [Theory]
+    [InlineData(null, "For each vocabulary word")]
+    [InlineData("Write a {level} story about {prompt}.", "For each vocabulary word")]
+    [InlineData("Return a JSON array for {wordList}.", "Return a JSON array for ")]
+    public async Task GenerateStoryFromDueWords_UsesAVocabularyPromptAndParsesJsonOutput(string? customPrompt, string promptStart)
     {
         using var context = CreateContext();
         var userId = Guid.NewGuid();
         int languageId = 1;
         SeedData(context, userId, languageId);
+        context.UserSettings.Add(new UserSettings { UserId = userId, CustomStoryPrompt = customPrompt });
+        await context.SaveChangesAsync();
 
         var mockService = new Mock<IStoryGenerationService>();
         mockService.Setup(s => s.GenerateStoryAsync(It.IsAny<string>(), It.IsAny<int>()))
@@ -213,6 +218,9 @@ public class SrsControllerTests
         var okResult = Assert.IsType<OkObjectResult>(result.Result);
         var response = Assert.IsType<SrsStoryGenerateResponse>(okResult.Value);
 
+        mockService.Verify(service => service.GenerateStoryAsync(It.Is<string>(prompt =>
+            prompt.StartsWith(promptStart, StringComparison.Ordinal) &&
+            prompt.Contains("- gato") && prompt.Contains("- perro") && !prompt.Contains("{wordList}")), 20000), Times.Once);
         Assert.Equal(2, response.MicroContexts.Count);
         Assert.Contains(response.MicroContexts, m => m.Term == "gato" && m.Context.StartsWith("El gato"));
         Assert.Contains(response.MicroContexts, m => m.Term == "perro" && m.Context.Contains("parque"));

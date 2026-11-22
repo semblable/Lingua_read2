@@ -7,7 +7,7 @@ import {
   getHardcoverStatus, syncAllHardcover
 } from '../utils/api';
 import * as api from '../utils/api';
-import { SettingsContext } from '../contexts/SettingsContext';
+import { normalizeAiProvider, SettingsContext } from '../contexts/SettingsContext';
 import type { AiProviderConfig, Settings, SettingKey } from '../contexts/SettingsContext';
 import type { Language } from '../utils/api/languages';
 import type { UpdateUserSettingsInput, UserSettings as UserSettingsResponse } from '../utils/api/settings';
@@ -29,6 +29,7 @@ import ReadingSettings from '../components/settings/ReadingSettings';
 import NavigationSettings from '../components/settings/NavigationSettings';
 import NewsFeedSettings from '../components/settings/NewsFeedSettings';
 import AiProviderSettings from '../components/settings/AiProviderSettings';
+import AiPromptSettings from '../components/settings/AiPromptSettings';
 import type { AiProviderConfigField } from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
 import HardcoverSettings from '../components/settings/HardcoverSettings';
@@ -199,7 +200,7 @@ const UserSettings = () => {
       newsImportEnabled: false,
       newsArticlesPerFeedPerDay: 3,
       newsDeleteUnreadAfterDays: 14,
-      aiProvider: 'gemini',
+      aiProvider: normalizeAiProvider(),
       aiProviders: {},
       aiProvidersWithApiKey: [],
       openRouterReasoningEnabled: false,
@@ -322,7 +323,7 @@ const UserSettings = () => {
           newsImportEnabled: data.newsImportEnabled ?? false,
           newsArticlesPerFeedPerDay: data.newsArticlesPerFeedPerDay || 3,
           newsDeleteUnreadAfterDays: data.newsDeleteUnreadAfterDays ?? 14,
-          aiProvider: data.aiProvider || 'gemini',
+          aiProvider: normalizeAiProvider(data.aiProvider),
           aiProviders: (data.aiProviders ?? {}) as Record<string, AiProviderConfig>,
           aiProvidersWithApiKey: data.aiProvidersWithApiKey ?? [],
           openRouterReasoningEnabled: data.openRouterReasoningEnabled ?? false,
@@ -831,7 +832,7 @@ const UserSettings = () => {
             </div>
 
             {/* AI Provider */}
-            <div ref={el => { sectionRefs.current.ai = el; }} className="settings-section-card mb-4">
+            <div ref={el => { sectionRefs.current.ai = el; }} className="settings-section-card settings-ai mb-4">
               <div className="settings-section-header">
                 <span className="settings-section-header-icon">{'\uD83E\uDD16'}</span>
                 <span>AI Provider</span>
@@ -848,6 +849,10 @@ const UserSettings = () => {
                 testResult={aiProviderTestResult}
                 onTestConnection={handleTestAiProvider}
                 saveNow={flushSettings}
+              />
+              <AiPromptSettings
+                settings={settings as Settings}
+                onChange={(field, value) => setField(field, value, SAVE_DELAY_MS.typing)}
               />
             </div>
 

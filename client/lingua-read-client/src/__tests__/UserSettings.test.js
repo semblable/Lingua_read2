@@ -10,6 +10,7 @@ import {
   getAllLanguages,
   getAudioStorageSize,
   getAiProviders,
+  getAiPromptDefaults,
   testAiProvider,
   getAiProviderModels,
   getNewsFeeds,
@@ -29,6 +30,7 @@ vi.mock('../utils/api', () => ({
   getHardcoverStatus: vi.fn(),
   syncAllHardcover: vi.fn(),
   getAiProviders: vi.fn(),
+  getAiPromptDefaults: vi.fn(),
   testAiProvider: vi.fn(),
   getAiProviderModels: vi.fn(),
   getNewsFeeds: vi.fn(),
@@ -72,7 +74,7 @@ const mockSettings = {
   hardcoverSyncEnabled: false,
   hasHardcoverApiToken: false,
   hardcoverLastSyncAt: null,
-  aiProvider: 'gemini',
+  aiProvider: 'google',
   aiProviders: {},
   aiProvidersWithApiKey: []
 };
@@ -95,11 +97,26 @@ const catalog = [
     requiresBaseUrl: false, apiKeyOptional: false, supportsReasoning: false
   },
   {
+    id: 'google', displayName: 'Google Gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-3.5-flash-lite', keyPlaceholder: 'AIza...', keysUrl: 'https://aistudio.google.com/apikey',
+    modelsUrl: null, requiresBaseUrl: false, apiKeyOptional: false, supportsReasoning: false
+  },
+  {
     id: 'custom', displayName: 'Custom (OpenAI-compatible)', baseUrl: null, defaultModel: null,
     keyPlaceholder: '(optional)', keysUrl: null, modelsUrl: null,
     requiresBaseUrl: true, apiKeyOptional: true, supportsReasoning: false
   }
 ];
+
+const promptDefaults = {
+  sentenceTranslation: 'Translate {text} into {targetLanguage}.',
+  selectionTranslation: 'Translate {selectedText} using {sentenceContext}.',
+  fullTextTranslation: 'Pair each original <o> with its translation <t>.',
+  sentenceExplanation: 'Explain {text} in {explanationLanguage}.',
+  story: 'Write a {level} story about {prompt}.',
+  summarization: 'Summarize {text} in {maxSummaryWords} words.',
+  vocabularyPractice: 'Make a JSON array from {wordList}.'
+};
 
 // A user on OpenRouter with a key and a model, like the settings the migration carries over.
 const onOpenRouter = {
@@ -175,6 +192,8 @@ describe('UserSettings', () => {
     });
     updateUserSettings.mockImplementation(echoSave);
     getAiProviders.mockResolvedValue(catalog);
+    getAiPromptDefaults.mockResolvedValue(promptDefaults);
+    getAiProviderModels.mockResolvedValue({ models: [], error: null });
     getNewsFeeds.mockResolvedValue([]);
     getHardcoverStatus.mockResolvedValue({ configured: false, connected: false, message: 'Not configured' });
     syncAllHardcover.mockResolvedValue({ results: [], message: 'Synced 0 of 0 books.' });
@@ -392,7 +411,7 @@ describe('UserSettings', () => {
     fireEvent.click(field('autoTranslateWords'));
     await advance(CHOICE_DELAY);
 
-    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save your changes: Network down");
+    expect(screen.getByText("Couldn't save your changes: Network down").closest('[role="alert"]')).toBeInTheDocument();
     expect(updateSetting).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
@@ -551,13 +570,18 @@ describe('UserSettings', () => {
 
   // --- AI providers ---
 
-  test('the built-in Gemini shows no key or model fields', async () => {
+  test('the legacy Gemini selection waits for the user to choose Google Gemini', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'gemini' });
     await renderLoaded();
 
-    expect(await screen.findByRole('option', { name: 'DeepSeek' })).toBeInTheDocument();
-    expect(field('aiProvider')).toHaveValue('gemini');
-    expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
-    expect(sectionOf(field('aiProvider')).queryByText(/API key/)).not.toBeInTheDocument();
+    await screen.findByRole('option', { name: 'Google Gemini' });
+    expect(field('aiProvider')).toHaveValue('none');
+    expect(screen.queryByLabelText('Google Gemini API key')).not.toBeInTheDocument();
+    fireEvent.change(field('aiProvider'), { target: { value: 'google' } });
+    expect(screen.getByLabelText('Google Gemini API key')).toBeInTheDocument();
+    expect(screen.getByLabelText('Model')).toHaveAttribute('placeholder', 'gemini-3.5-flash-lite');
+    expect(screen.getByTestId('ai-provider-incomplete')).toHaveTextContent('Add an API key to use Google Gemini.');
+    expect(getAiProviderModels).not.toHaveBeenCalled();
   });
 
   test('picking DeepSeek saves the choice and asks for its key', async () => {
@@ -573,7 +597,7 @@ describe('UserSettings', () => {
     expect(screen.getByLabelText('DeepSeek API key')).toBeInTheDocument();
     // DeepSeek has a default model, so only the key is missing.
     expect(screen.getByTestId('ai-provider-incomplete'))
-      .toHaveTextContent('DeepSeek is not in use yet: add an API key. Until then, AI features use the built-in Gemini.');
+      .toHaveTextContent('Add an API key to use DeepSeek.');
     expect(screen.getByLabelText('Model')).toHaveAttribute('placeholder', 'deepseek-flash');
   });
 
@@ -600,6 +624,22 @@ describe('UserSettings', () => {
     fireEvent.click(sectionOf(key).getAllByRole('button', { name: 'Clear' })[0]);
     await waitFor(() => expect(updateUserSettings).toHaveBeenLastCalledWith({ aiApiKeys: { deepseek: '' } }));
     expect(await screen.findByTestId('ai-provider-incomplete')).toBeInTheDocument();
+  });
+
+  test('switching providers discards unsaved keys', async () => {
+    await renderLoaded();
+    const googleKey = await screen.findByLabelText('Google Gemini API key');
+    fireEvent.change(googleKey, { target: { value: 'synthetic-unsaved-key' } });
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    const deepSeekKey = screen.getByLabelText('DeepSeek API key');
+    expect(deepSeekKey).toHaveValue('');
+    fireEvent.keyDown(deepSeekKey, { key: 'Enter' });
+
+    fireEvent.change(field('aiProvider'), { target: { value: 'google' } });
+    expect(screen.getByLabelText('Google Gemini API key')).toHaveValue('');
+    expect(updateUserSettings.mock.calls.some(([patch]) => patch.aiApiKeys)).toBe(false);
+    expect(getAiProviderModels).not.toHaveBeenCalled();
   });
 
   test('each provider keeps its own model: an edit made just before switching stays with its provider', async () => {
@@ -651,7 +691,7 @@ describe('UserSettings', () => {
     useManualClock();
 
     expect(screen.getByLabelText('Custom (OpenAI-compatible) API key (optional)')).toBeInTheDocument();
-    expect(screen.getByTestId('ai-provider-incomplete')).toHaveTextContent('add the server URL and a model');
+    expect(screen.getByTestId('ai-provider-incomplete')).toHaveTextContent('Add the server URL and a model');
 
     fireEvent.change(url, { target: { value: 'http://localhost:11434/v1' } });
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'llama3.3' } });
@@ -663,35 +703,124 @@ describe('UserSettings', () => {
     expect(screen.queryByTestId('ai-provider-incomplete')).not.toBeInTheDocument();
   });
 
-  test('Load models lists the provider\'s models as suggestions', async () => {
+  test('automatically loads and refreshes suggestions without selecting a model or testing it', async () => {
     getUserSettings.mockResolvedValue(onOpenRouter);
     getAiProviderModels.mockResolvedValue({ models: ['a/one', 'b/two'], error: null });
     await renderLoaded();
 
     const model = await screen.findByLabelText('Model');
-    fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
-
-    expect(await screen.findByText(/2 models loaded/)).toBeInTheDocument();
-    expect(getAiProviderModels).toHaveBeenCalledWith('openrouter');
+    expect(await screen.findByText('2 models available.')).toBeInTheDocument();
+    expect(getAiProviderModels).toHaveBeenCalledWith('openrouter', expect.any(AbortSignal));
     const list = document.getElementById(model.getAttribute('list'));
     expect([...list.querySelectorAll('option')].map(o => o.value)).toEqual(['a/one', 'b/two']);
-    // The per-task fields share the suggestions.
     expect(field('aiTranslationModel')).toHaveAttribute('list', model.getAttribute('list'));
+
+    getAiProviderModels.mockResolvedValue({ models: ['a/one', 'b/two', 'c/new'], error: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
+
+    expect(await screen.findByText('3 models available.')).toBeInTheDocument();
+    expect([...list.querySelectorAll('option')].map(o => o.value)).toEqual(['a/one', 'b/two', 'c/new']);
+    expect(model).toHaveValue(onOpenRouter.aiProviders.openrouter.model);
+    expect(updateUserSettings).not.toHaveBeenCalled();
+    expect(testAiProvider).not.toHaveBeenCalled();
   });
 
-  test('Load models saves a server URL still waiting to save before fetching', async () => {
+  test('shows the live default prompts, starts an editable draft, and resets to the default', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'none', customStoryPrompt: 'My story prompt' });
+    await renderLoaded();
+    const summary = await screen.findByText('Default sentence translation prompt');
+    const preview = within(summary.closest('details'));
+    fireEvent.click(summary);
+
+    expect(preview.getByText(promptDefaults.sentenceTranslation)).toBeInTheDocument();
+    expect(screen.getByText('Default selection translation prompt')).toBeInTheDocument();
+    expect(screen.getByText('Full-text translation prompt')).toBeInTheDocument();
+    expect(screen.getByText('Default vocabulary practice prompt')).toBeInTheDocument();
+    expect(field('customStoryPrompt')).toHaveValue('My story prompt');
+
+    useManualClock();
+    fireEvent.click(preview.getByText('Edit a copy'));
+    const translation = field('customTranslationPrompt');
+    expect(translation).toHaveValue(promptDefaults.sentenceTranslation);
+    await advance(TYPING_DELAY);
+    expect(updateUserSettings).not.toHaveBeenCalled();
+    expect(testAiProvider).not.toHaveBeenCalled();
+
+    const customized = `${promptDefaults.sentenceTranslation} Use everyday language.`;
+    fireEvent.change(translation, { target: { value: customized } });
+    await advance(TYPING_DELAY);
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ customTranslationPrompt: customized }, { keepalive: true });
+
+    fireEvent.click(within(translation.closest('.border-bottom')).getByRole('button', { name: 'Reset to default' }));
+    await advance(TYPING_DELAY);
+    expect(updateUserSettings).toHaveBeenLastCalledWith({ customTranslationPrompt: '' }, { keepalive: true });
+    expect(translation).toHaveValue('');
+    expect(preview.getByText(promptDefaults.sentenceTranslation)).toBeInTheDocument();
+  });
+
+  test('switching providers fetches new suggestions and discards the previous response', async () => {
+    const pending = deferred();
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvidersWithApiKey: ['google', 'deepseek'] });
+    getAiProviderModels.mockImplementation(provider => provider === 'google'
+      ? pending.promise
+      : Promise.resolve({ models: ['deepseek-new'] }));
+    await renderLoaded();
+    await waitFor(() => expect(getAiProviderModels).toHaveBeenCalledWith('google', expect.any(AbortSignal)));
+
+    const googleSignal = getAiProviderModels.mock.calls[0][1];
+    fireEvent.change(field('aiProvider'), { target: { value: 'deepseek' } });
+    expect(await screen.findByText('1 model available.')).toBeInTheDocument();
+    expect(googleSignal.aborted).toBe(true);
+    await act(async () => pending.resolve({ models: ['gemini-new'] }));
+
+    const list = document.getElementById(field('aiModel').getAttribute('list'));
+    expect([...list.querySelectorAll('option')].map(o => o.value)).toEqual(['deepseek-new']);
+    expect(testAiProvider).not.toHaveBeenCalled();
+  });
+
+  test('refreshing models saves a pending custom URL before fetching', async () => {
     getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'custom' });
     getAiProviderModels.mockResolvedValue({ models: ['llama3.3'], error: null });
     await renderLoaded();
 
     const url = await screen.findByLabelText('Server URL');
     fireEvent.change(url, { target: { value: 'http://localhost:11434/v1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Load models' }));
+    expect(getAiProviderModels).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
 
-    expect(await screen.findByText(/1 models loaded/)).toBeInTheDocument();
+    expect(await screen.findByText('1 model available.')).toBeInTheDocument();
     expect(updateUserSettings).toHaveBeenCalledWith({ aiProviders: { custom: { baseUrl: 'http://localhost:11434/v1' } } }, { keepalive: true });
     expect(updateUserSettings.mock.invocationCallOrder[0])
       .toBeLessThan(getAiProviderModels.mock.invocationCallOrder[0]);
+  });
+
+  test('saving a custom URL with a stored key waits for an explicit model refresh', async () => {
+    getUserSettings.mockResolvedValue({
+      ...mockSettings,
+      aiProvider: 'custom',
+      aiProviders: { custom: { baseUrl: 'https://first.example/v1', model: 'test-model' } },
+      aiProvidersWithApiKey: ['custom']
+    });
+    getAiProviderModels.mockResolvedValue({ models: ['test-model'], error: null });
+    await renderLoaded();
+    const url = await screen.findByLabelText('Server URL');
+    useManualClock();
+
+    fireEvent.change(url, { target: { value: 'https://second.example/v1' } });
+    await advance(TYPING_DELAY);
+    expect(updateUserSettings).toHaveBeenCalledWith({
+      aiProviders: { custom: { baseUrl: 'https://second.example/v1', model: 'test-model' } }
+    }, { keepalive: true });
+    expect(getAiProviderModels).not.toHaveBeenCalled();
+
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Refresh models' })));
+    expect(getAiProviderModels).toHaveBeenCalledExactlyOnceWith('custom', expect.any(AbortSignal));
+    expect(screen.getByText('1 model available.')).toBeInTheDocument();
+
+    fireEvent.change(url, { target: { value: 'https://third.example/v1' } });
+    await advance(TYPING_DELAY);
+    expect(getAiProviderModels).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('1 model available.')).not.toBeInTheDocument();
   });
 
   test('a connection test result stays with the provider it was for', async () => {
@@ -709,14 +838,13 @@ describe('UserSettings', () => {
     expect(screen.getByText('OpenRouter error: Unauthorized')).toBeInTheDocument();
   });
 
-  test('Load models shows why the list could not be fetched', async () => {
-    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'openai' });
-    getAiProviderModels.mockResolvedValue({ models: [], error: 'OpenAI API key not configured' });
+  test('shows a provider error when automatic model discovery fails', async () => {
+    getUserSettings.mockResolvedValue({ ...mockSettings, aiProvider: 'openai', aiProvidersWithApiKey: ['openai'] });
+    getAiProviderModels.mockResolvedValue({ models: [], error: 'OpenAI API key was rejected' });
     await renderLoaded();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Load models' }));
-
-    expect(await screen.findByText('OpenAI API key not configured')).toBeInTheDocument();
+    expect(await screen.findByText('OpenAI API key was rejected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh models' })).toBeEnabled();
   });
 
   test('reasoning settings show only for providers that support them', async () => {

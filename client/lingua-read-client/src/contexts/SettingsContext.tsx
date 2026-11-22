@@ -1,6 +1,12 @@
 import { createContext } from 'react';
 import { normalizeTheme, readCachedTheme } from '../utils/theme';
 
+const DEFAULT_AI_PROVIDER = 'google';
+export const DISABLED_AI_PROVIDER = 'none';
+
+export const normalizeAiProvider = (provider?: string | null): string =>
+  provider === 'gemini' ? DISABLED_AI_PROVIDER : provider || DEFAULT_AI_PROVIDER;
+
 // One AI provider's settings (never its key). Empty model fields fall back to the provider's
 // model, then to the provider's default model.
 export type AiProviderConfig = {
@@ -70,7 +76,7 @@ export type Settings = {
   newsArticlesPerFeedPerDay: number;
   // Imported articles never opened are deleted after this many days; 0 keeps them.
   newsDeleteUnreadAfterDays: number;
-  // 'gemini' (the built-in Gemini) or a provider id from GET /api/aiproviders.
+  // Provider id from GET /api/aiproviders.
   aiProvider: string;
   // Per-provider settings by provider id.
   aiProviders: Record<string, AiProviderConfig>;
@@ -167,7 +173,7 @@ const defaultSettings: Settings = {
   newsImportEnabled: false,
   newsArticlesPerFeedPerDay: 3,
   newsDeleteUnreadAfterDays: 14,
-  aiProvider: 'gemini',
+  aiProvider: DEFAULT_AI_PROVIDER,
   aiProviders: {},
   aiProvidersWithApiKey: [],
   openRouterReasoningEnabled: false,
@@ -290,7 +296,7 @@ export const mergeSettings = (
     newsImportEnabled: d.newsImportEnabled ?? base.newsImportEnabled,
     newsArticlesPerFeedPerDay: d.newsArticlesPerFeedPerDay || base.newsArticlesPerFeedPerDay,
     newsDeleteUnreadAfterDays: d.newsDeleteUnreadAfterDays ?? base.newsDeleteUnreadAfterDays,
-    aiProvider: d.aiProvider || base.aiProvider,
+    aiProvider: normalizeAiProvider(d.aiProvider || base.aiProvider),
     aiProviders: d.aiProviders ?? base.aiProviders,
     aiProvidersWithApiKey: d.aiProvidersWithApiKey ?? base.aiProvidersWithApiKey,
     openRouterReasoningEnabled:

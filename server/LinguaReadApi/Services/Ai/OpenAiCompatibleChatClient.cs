@@ -98,9 +98,8 @@ namespace LinguaReadApi.Services.Ai
                         var providerMessage = TryReadErrorMessage(body);
                         lastFailure = new ChatCompletionResult(null, FormatError(status, providerMessage), status, ProviderMessage: providerMessage);
 
-                        // Servers differ in which optional parameters they accept (max_tokens limits,
-                        // temperature on reasoning models, reasoning switches), and a rejected one is
-                        // a 400. One retry with just the model and the messages gets past all of them.
+                        // Some compatible servers reject the token limit or reasoning options.
+                        // Retry once with the common request fields.
                         if (status == HttpStatusCode.BadRequest && !strippedOptionalParameters && HasOptionalParameters(payload))
                         {
                             _logger.LogWarning("{Provider} rejected the {Operation} request (model {Model}): {Message}. Retrying without optional parameters.",
@@ -178,21 +177,24 @@ namespace LinguaReadApi.Services.Ai
 
                 using var doc = JsonDocument.Parse(body);
                 // OpenAI shape: { "data": [ { "id": ... } ] }; a few servers return a bare array.
-                var items = doc.RootElement.ValueKind == JsonValueKind.Array
-                    ? doc.RootElement
-                    : doc.RootElement.TryGetProperty("data", out var data) ? data : default;
+                var root = doc.RootElement;
+                var items = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("data", out var data)
+                    ? data
+                    : root;
                 if (items.ValueKind != JsonValueKind.Array)
                 {
                     return (Array.Empty<string>(), "The provider's model list has an unexpected format.");
                 }
 
+                // Gemini's OpenAI endpoint lists "models/gemini-..." but chat expects the bare name.
+                var stripGeminiPrefix = connection.Definition.Id == AiProviderCatalog.Google;
                 var ids = items.EnumerateArray()
                     .Select(item => item.ValueKind == JsonValueKind.Object && item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String
                         ? id.GetString()
                         : null)
+                    .OfType<string>()
+                    .Select(id => stripGeminiPrefix && id.StartsWith("models/", StringComparison.Ordinal) ? id["models/".Length..] : id)
                     .Where(id => !string.IsNullOrWhiteSpace(id))
-                    // Gemini's OpenAI endpoint lists "models/gemini-..." but its chat endpoint wants the bare name.
-                    .Select(id => id!.StartsWith("models/", StringComparison.Ordinal) ? id["models/".Length..] : id)
                     .Distinct(StringComparer.Ordinal)
                     .Order(StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -312,8 +314,8 @@ namespace LinguaReadApi.Services.Ai
         }
 
         private static bool HasOptionalParameters(ChatCompletionRequest request) =>
-            request.Temperature != null || request.MaxTokens != null || request.TopP != null ||
-            request.Reasoning != null || request.Thinking != null || request.ReasoningEffort != null;
+            request.MaxTokens != null || request.Reasoning != null ||
+            request.Thinking != null || request.ReasoningEffort != null;
 
         private static string FormatError(HttpStatusCode status, string? providerMessage) =>
             string.IsNullOrWhiteSpace(providerMessage) ? status.ToString() : $"{status} ({Truncate(providerMessage, 300)})";

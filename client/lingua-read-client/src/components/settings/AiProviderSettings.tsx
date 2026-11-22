@@ -1,29 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Form, Button, Alert } from 'react-bootstrap';
+import { DISABLED_AI_PROVIDER } from '../../contexts/SettingsContext';
 import type { AiProviderConfig, Settings } from '../../contexts/SettingsContext';
 import type { SettingsChangeHandler } from './AppearanceSettings';
 import type { AiProviderInfo, AiProviderTestResult } from '../../utils/api/aiProviders';
 import { getAiProviderModels } from '../../utils/api';
 import SecretKeyField from './SecretKeyField';
 
-const BUILT_IN_GEMINI = 'gemini';
-
 type ModelField = 'model' | 'translationModel' | 'explanationModel' | 'storyModel' | 'summarizationModel';
 export type AiProviderConfigField = ModelField | 'baseUrl';
 
-const TASKS: ReadonlyArray<{ key: string; label: string; modelField: ModelField; promptName: string }> = [
-  { key: 'Translation', label: 'Translation (sentence + selection)', modelField: 'translationModel', promptName: 'customTranslationPrompt' },
-  { key: 'Explanation', label: 'Sentence explanation', modelField: 'explanationModel', promptName: 'customExplanationPrompt' },
-  { key: 'Story', label: 'Story generation', modelField: 'storyModel', promptName: 'customStoryPrompt' },
-  { key: 'Summarization', label: 'Summarization', modelField: 'summarizationModel', promptName: 'customSummarizationPrompt' }
+const TASKS: ReadonlyArray<{ key: string; label: string; modelField: ModelField }> = [
+  { key: 'Translation', label: 'Translation (sentence + selection)', modelField: 'translationModel' },
+  { key: 'Explanation', label: 'Sentence explanation', modelField: 'explanationModel' },
+  { key: 'Story', label: 'Story generation', modelField: 'storyModel' },
+  { key: 'Summarization', label: 'Summarization', modelField: 'summarizationModel' }
 ];
 
 const REASONING_EFFORTS = ['xhigh', 'high', 'medium', 'low', 'minimal', 'none'];
 
-/**
- * What the provider still needs before AI requests go to it (the server falls back to the
- * built-in Gemini until then). Mirrors AiProviderConnection.TryCreate on the server.
- */
+/** What the provider needs before it can handle AI requests. */
 const missingProviderSetup = (
   provider: AiProviderInfo,
   config: AiProviderConfig | undefined,
@@ -70,55 +66,79 @@ const AiProviderSettings = ({
   onTestConnection,
   saveNow
 }: AiProviderSettingsProps) => {
-  // Model ids fetched from each provider, by provider id.
-  const [models, setModels] = useState<Record<string, string[]>>({});
-  const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsMessage, setModelsMessage] = useState<{ provider: string; text: string; error: boolean } | null>(null);
-
-  const selectedId = settings.aiProvider || BUILT_IN_GEMINI;
+  const [refreshByProvider, setRefreshByProvider] = useState<Record<string, number>>({});
+  const selectedId = settings.aiProvider;
   const provider = providers?.find(p => p.id === selectedId) ?? null;
   const config: AiProviderConfig = settings.aiProviders?.[selectedId] ?? {};
-  const hasApiKey = (settings.aiProvidersWithApiKey ?? []).includes(selectedId);
+  const savedKeys = settings.aiProvidersWithApiKey;
+  const hasApiKey = savedKeys.includes(selectedId);
   const missing = provider ? missingProviderSetup(provider, config, hasApiKey) : [];
-  const providerModels = models[selectedId] ?? [];
+  const canUseKey = provider !== null && (provider.apiKeyOptional === true || hasApiKey === true);
+  const requiresBaseUrl = provider?.requiresBaseUrl === true;
+  const baseUrl = requiresBaseUrl ? config.baseUrl?.trim() : undefined;
+  const canRefresh = canUseKey && (!requiresBaseUrl || !!baseUrl);
+  const refresh = refreshByProvider[selectedId] ?? 0;
+  const modelSource = useMemo(() => ({
+    provider: selectedId, baseUrl, savedKeys, refresh
+  }), [selectedId, baseUrl, savedKeys, refresh]);
+  const [manualRequest, setManualRequest] = useState<{ provider: string; source: typeof modelSource } | null>(null);
+  // Saving a custom URL alone must not send the stored key to that URL.
+  const modelRequest = requiresBaseUrl
+    ? (manualRequest?.source === modelSource ? manualRequest : null)
+    : (canUseKey ? modelSource : null);
+  const [modelResult, setModelResult] = useState<{
+    request: NonNullable<typeof modelRequest>;
+    models: string[];
+    error?: string;
+  } | null>(null);
+  const [refreshError, setRefreshError] = useState<typeof modelSource | null>(null);
+  const currentResult = modelResult?.request === modelRequest ? modelResult : null;
+  const providerModels = currentResult?.models ?? [];
+  const modelsError = refreshError === modelSource
+    ? 'Save your changes before refreshing the model list.'
+    : currentResult?.error;
+  const modelsLoading = modelRequest !== null && !currentResult;
   const datalistId = `ai-models-${selectedId}`;
   const testResult = lastTest?.provider === selectedId ? lastTest.result : null;
 
   // Keep a saved selection visible even if the catalog failed to load or no longer lists it.
   const options = [
+    { id: DISABLED_AI_PROVIDER, name: 'No provider' },
     ...(providers ?? []).map(p => ({ id: p.id ?? '', name: p.displayName ?? p.id ?? '' })),
-    ...(selectedId !== BUILT_IN_GEMINI && !provider ? [{ id: selectedId, name: selectedId }] : [])
+    ...(!provider && selectedId !== DISABLED_AI_PROVIDER ? [{ id: selectedId, name: selectedId }] : [])
   ];
 
-  const loadModels = async () => {
-    setModelsLoading(true);
-    setModelsMessage(null);
-    try {
-      // The list is fetched with the saved key and URL, so a URL still waiting to save goes first.
-      if (!(await saveNow())) {
-        setModelsMessage({
-          provider: selectedId,
-          text: "Your latest changes aren't saved yet, so the list would use the old ones. Retry the save first.",
-          error: true
-        });
-        return;
+  useEffect(() => {
+    if (!modelRequest) return;
+    const controller = new AbortController();
+    const loadModels = async () => {
+      try {
+        const result = await getAiProviderModels(modelRequest.provider, controller.signal);
+        if (!controller.signal.aborted) {
+          setModelResult({ request: modelRequest, models: result.models ?? [], error: result.error ?? undefined });
+        }
+      } catch (e: unknown) {
+        if (!controller.signal.aborted) {
+          const error = (e instanceof Error && e.message) || 'Failed to load models.';
+          setModelResult({ request: modelRequest, models: [], error });
+        }
       }
-      const result = await getAiProviderModels(selectedId);
-      if (result.error) {
-        setModelsMessage({ provider: selectedId, text: result.error, error: true });
-      } else {
-        const ids = result.models ?? [];
-        setModels(current => ({ ...current, [selectedId]: ids }));
-        setModelsMessage({
-          provider: selectedId,
-          text: ids.length ? `${ids.length} models loaded: pick one from the model fields' suggestions.` : 'The provider listed no models.',
-          error: ids.length === 0
-        });
-      }
-    } catch (e: unknown) {
-      setModelsMessage({ provider: selectedId, text: (e instanceof Error && e.message) || 'Failed to load models.', error: true });
-    } finally {
-      setModelsLoading(false);
+    };
+    void loadModels();
+    return () => controller.abort();
+  }, [modelRequest]);
+
+  const refreshModels = async () => {
+    // Save an edited server URL before the server looks up the provider.
+    if (!(await saveNow())) {
+      setRefreshError(modelSource);
+      return;
+    }
+    setRefreshError(null);
+    if (requiresBaseUrl) {
+      setManualRequest({ provider: selectedId, source: modelSource });
+    } else {
+      setRefreshByProvider(current => ({ ...current, [selectedId]: (current[selectedId] ?? 0) + 1 }));
     }
   };
 
@@ -133,7 +153,6 @@ const AiProviderSettings = ({
         <Form.Group className="mb-0" controlId="aiProvider">
           <Form.Label>AI provider</Form.Label>
           <Form.Select name="aiProvider" value={selectedId} onChange={handleChange}>
-            <option value={BUILT_IN_GEMINI}>Built-in Gemini (server key)</option>
             {options.map(o => (
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
@@ -150,12 +169,11 @@ const AiProviderSettings = ({
         )}
       </div>
 
-      {selectedId !== BUILT_IN_GEMINI && provider && (
+      {provider && (
         <>
           {missing.length > 0 && (
             <Alert variant="warning" className="mb-3" style={{ fontSize: '0.9em' }} data-testid="ai-provider-incomplete">
-              {provider.displayName} is not in use yet: add {joinWithAnd(missing)}. Until then, AI
-              features use the built-in Gemini.
+              Add {joinWithAnd(missing)} to use {provider.displayName}.
             </Alert>
           )}
 
@@ -179,6 +197,7 @@ const AiProviderSettings = ({
             )}
 
             <SecretKeyField
+              key={selectedId}
               controlId={`aiApiKey-${selectedId}`}
               label={provider.apiKeyOptional ? `${provider.displayName} API key (optional)` : `${provider.displayName} API key`}
               field={selectedId}
@@ -203,19 +222,21 @@ const AiProviderSettings = ({
                 name="aiModel"
                 list={datalistId}
                 autoComplete="off"
-                placeholder={provider.defaultModel ?? 'Model id, e.g. from "Load models"'}
+                placeholder={provider.defaultModel ?? 'Model ID'}
                 {...configInput('model')}
               />
               <datalist id={datalistId}>
                 {providerModels.map(m => <option key={m} value={m} />)}
               </datalist>
               <div className="d-flex flex-wrap align-items-center gap-2 mt-2">
-                <Button variant="outline-secondary" size="sm" type="button" onClick={loadModels} disabled={modelsLoading}>
-                  {modelsLoading ? 'Loading models...' : 'Load models'}
+                <Button variant="outline-secondary" size="sm" type="button" onClick={refreshModels} disabled={!canRefresh || modelsLoading}>
+                  {modelsLoading ? 'Loading models...' : 'Refresh models'}
                 </Button>
-                {modelsMessage?.provider === selectedId && (
-                  <span className={`small ${modelsMessage.error ? 'text-danger' : 'text-muted'}`} role="status">
-                    {modelsMessage.text}
+                {(currentResult || modelsError) && (
+                  <span className={`small ${modelsError ? 'text-danger' : 'text-muted'}`} role="status">
+                    {modelsError || (providerModels.length > 0
+                      ? `${providerModels.length} ${providerModels.length === 1 ? 'model' : 'models'} available.`
+                      : 'The provider listed no models.')}
                   </span>
                 )}
               </div>
@@ -223,15 +244,12 @@ const AiProviderSettings = ({
                 {provider.defaultModel
                   ? <>Leave empty to use <code>{provider.defaultModel}</code>.</>
                   : 'Required.'}{' '}
-                Load models lists what your saved key can use
+                {requiresBaseUrl ? 'Use Refresh models to check the saved server URL.' : 'Models are loaded from your provider.'}
                 {provider.modelsUrl && (
-                  <>
-                    ; the provider's{' '}
-                    <a href={provider.modelsUrl} target="_blank" rel="noopener noreferrer">model list</a>{' '}
-                    describes them
+                  <> See the provider's{' '}
+                    <a href={provider.modelsUrl} target="_blank" rel="noopener noreferrer">model documentation</a>.
                   </>
                 )}
-                .
               </Form.Text>
             </Form.Group>
           </div>
@@ -301,46 +319,23 @@ const AiProviderSettings = ({
           )}
 
           <div className="settings-control-group">
-            <small className="text-muted d-block mb-2 fw-bold">Per-task model & prompt overrides</small>
+            <small className="text-muted d-block mb-2 fw-bold">Per-task models</small>
             <Form.Text className="text-muted d-block mb-3">
-              Leave a model field empty to fall back to the model above. Model overrides belong to{' '}
-              {provider.displayName}; prompts apply to every provider. Leave a prompt field empty to
-              use the built-in template. Prompts support placeholders like{' '}
-              <code>{'{text}'}</code>, <code>{'{sourceLanguage}'}</code>,{' '}
-              <code>{'{targetLanguage}'}</code>, <code>{'{explanationLanguage}'}</code>,{' '}
-              <code>{'{maxSummaryWords}'}</code>, <code>{'{level}'}</code>,{' '}
-              <code>{'{language}'}</code>, <code>{'{prompt}'}</code>, <code>{'{maxLength}'}</code>,{' '}
-              <code>{'{selectedText}'}</code>, <code>{'{sentenceContext}'}</code>.
-              Note: full-text translation always uses the structural tagged template (custom
-              translation prompts apply only to single-sentence and selection translations).
+              Empty fields use the default model for {provider.displayName}.
             </Form.Text>
 
             {TASKS.map(task => (
-              <div key={task.key} className="mb-3 pb-3 border-bottom">
-                <Form.Group className="mb-2" controlId={`ai${task.key}Model`}>
-                  <Form.Label className="mb-1">{task.label} — model</Form.Label>
-                  <Form.Control
-                    type="text"
-                    name={`ai${task.key}Model`}
-                    list={datalistId}
-                    autoComplete="off"
-                    placeholder="(use the model above)"
-                    {...configInput(task.modelField)}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-0" controlId={task.promptName}>
-                  <Form.Label className="mb-1">{task.label} — custom prompt</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={3}
-                    name={task.promptName}
-                    placeholder="(leave empty to use built-in default)"
-                    value={(settings as unknown as Record<string, string>)[task.promptName] || ''}
-                    onChange={handleChange}
-                    style={{ fontFamily: 'monospace', fontSize: '0.85em' }}
-                  />
-                </Form.Group>
-              </div>
+              <Form.Group key={task.key} className="mb-2" controlId={`ai${task.key}Model`}>
+                <Form.Label className="mb-1">{task.label} — model</Form.Label>
+                <Form.Control
+                  type="text"
+                  name={`ai${task.key}Model`}
+                  list={datalistId}
+                  autoComplete="off"
+                  placeholder="(use the model above)"
+                  {...configInput(task.modelField)}
+                />
+              </Form.Group>
             ))}
           </div>
 
@@ -370,15 +365,6 @@ const AiProviderSettings = ({
             )}
           </div>
         </>
-      )}
-
-      {selectedId === BUILT_IN_GEMINI && (
-        <div className="settings-control-group">
-          <Form.Text className="text-muted d-block">
-            The built-in Gemini uses the key configured on the server. Pick a provider above to use
-            your own key, or a custom OpenAI-compatible server such as Ollama or LM Studio.
-          </Form.Text>
-        </div>
       )}
     </>
   );

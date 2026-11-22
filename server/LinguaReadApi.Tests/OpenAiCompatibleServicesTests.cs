@@ -110,7 +110,12 @@ public class OpenAiCompatibleServicesTests
         var result = await Translation(handler).TranslateSelectionWithContextAsync("mundo", "Olá mundo", "", "EN", DeepSeekWithOverrides());
 
         Assert.Equal("world", result);
-        Assert.Equal(1024, Body(handler).GetProperty("max_tokens").GetInt32());
+        var body = Body(handler);
+        Assert.Equal(1024, body.GetProperty("max_tokens").GetInt32());
+        var prompt = body.GetProperty("messages")[0].GetProperty("content").GetString();
+        Assert.Contains("Olá mundo", prompt);
+        Assert.Contains("Target language: EN", prompt);
+        Assert.DoesNotContain("{selectedText}", prompt);
     }
 
     [Fact]

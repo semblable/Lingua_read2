@@ -3,10 +3,8 @@ using System;
 namespace LinguaReadApi.Services
 {
     /// <summary>
-    /// Thrown by a word-translation provider when neither a per-user credential nor a server-level
-    /// fallback is configured, so there is nothing to authenticate with. The controller maps this
-    /// to a clear 4xx ("provider not configured") instead of silently returning empty translations,
-    /// which in the reader is indistinguishable from "the provider produced no result".
+    /// Thrown when the selected translation or AI provider is missing settings needed for a request.
+    /// Controllers return the setup message to the user.
     /// </summary>
     public class TranslationProviderNotConfiguredException : Exception
     {

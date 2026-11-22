@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Claims;
+using System.Text.Json;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
 using LinguaReadApi.Models;
@@ -8,7 +9,6 @@ using LinguaReadApi.Services.Ai;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -25,14 +25,36 @@ public class AiProviderSelectionTests
     // --- factories ---
 
     [Fact]
-    public async Task BuiltInGemini_IsUsed_WhenSelected()
+    public async Task Gemini_UsesTheUsersSavedKeyAndDefaultModel()
     {
         await using var context = CreateContext();
-        var userId = await SeedUserAsync(context, "gemini", new UserAiProvider { Provider = "deepseek", ApiKey = "sk" });
+        await SeedUserAsync(context, "google", new UserAiProvider { Provider = "google", ApiKey = "other-test-key" });
+        var userId = await SeedUserAsync(context, "google", new UserAiProvider { Provider = "google", ApiKey = "user-test-key" });
+        var handler = new ScriptedHandler(
+            Json(HttpStatusCode.OK, Completion("bonjour")),
+            Json(HttpStatusCode.OK, Completion("Une histoire.")),
+            Json(HttpStatusCode.OK, Completion("Un résumé.")));
+        var client = CreateClient(handler);
 
-        Assert.IsType<GeminiTranslationService>(await TranslationFactory(context).GetServiceForUserAsync(userId));
-        Assert.IsType<GeminiStoryGenerationService>(await StoryFactory(context).GetServiceForUserAsync(userId));
-        Assert.IsType<GeminiSummarizationService>(await SummarizationFactory(context).GetServiceForUserAsync(userId));
+        var translation = await TranslationFactory(context, client).GetServiceForUserAsync(userId);
+        var story = await StoryFactory(context, client).GetServiceForUserAsync(userId);
+        var summary = await SummarizationFactory(context, client).GetServiceForUserAsync(userId);
+        Assert.Equal("bonjour", await translation.TranslateSentenceAsync("hello", "", "fr"));
+        Assert.Equal("Une histoire.", await story.GenerateStoryAsync("Write a story in French."));
+        Assert.Equal("Un résumé.", await summary.SummarizeAsync("Mon histoire", "fr", "fr"));
+
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", request.Uri.ToString());
+            Assert.Equal("Bearer user-test-key", request.Authorization);
+            using var body = JsonDocument.Parse(request.Body);
+            Assert.Equal("gemini-3.5-flash-lite", body.RootElement.GetProperty("model").GetString());
+            Assert.False(body.RootElement.TryGetProperty("temperature", out _));
+            Assert.False(body.RootElement.TryGetProperty("top_p", out _));
+            Assert.False(body.RootElement.TryGetProperty("top_k", out _));
+        });
     }
 
     [Fact]
@@ -48,12 +70,16 @@ public class AiProviderSelectionTests
 
     [Theory]
     [MemberData(nameof(UnusableSetups))]
-    public async Task AnIncompleteProvider_FallsBackToGemini(string selection, UserAiProvider? config)
+    public async Task AnIncompleteProvider_ReportsMissingSetup(string selection, UserAiProvider? config)
     {
         await using var context = CreateContext();
         var userId = await SeedUserAsync(context, selection, config);
+        context.UserAiProviders.Add(new UserAiProvider { UserId = userId, Provider = "google", ApiKey = "unselected-test-key" });
+        await context.SaveChangesAsync();
 
-        Assert.IsType<GeminiTranslationService>(await TranslationFactory(context).GetServiceForUserAsync(userId));
+        var error = await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(
+            () => TranslationFactory(context).GetServiceForUserAsync(userId));
+        Assert.Contains("Settings", error.Message);
     }
 
     public static TheoryData<string, UserAiProvider?> UnusableSetups() => new()
@@ -64,6 +90,8 @@ public class AiProviderSelectionTests
         { "custom", new UserAiProvider { Provider = "custom", Model = "llama3" } },             // no base URL
         { "openai", new UserAiProvider { Provider = "deepseek", ApiKey = "sk" } },              // key belongs to another provider
         { "retired-provider", null },                                                          // stale selection
+        { "gemini", null },                                                                    // retired shared-key setup
+        { "none", null },
     };
 
     [Fact]
@@ -84,15 +112,21 @@ public class AiProviderSelectionTests
         var userId = await SeedUserAsync(context, "openai",
             new UserAiProvider { Provider = "openai", ApiKey = "sk", TranslationModel = "gpt" });
 
-        Assert.IsType<GeminiStoryGenerationService>(await StoryFactory(context).GetServiceForUserAsync(userId));
+        var error = await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(
+            () => StoryFactory(context).GetServiceForUserAsync(userId));
+        Assert.Contains("no model selected", error.Message);
     }
 
     [Fact]
-    public async Task NoSettingsRow_UsesGemini()
+    public async Task NoSettingsRow_ReportsTheMissingGeminiKey()
     {
         await using var context = CreateContext();
+        var userId = Guid.NewGuid();
 
-        Assert.IsType<GeminiTranslationService>(await TranslationFactory(context).GetServiceForUserAsync(Guid.NewGuid()));
+        var error = await Assert.ThrowsAsync<TranslationProviderNotConfiguredException>(
+            () => TranslationFactory(context).GetServiceForUserAsync(userId));
+        Assert.Contains("Google Gemini API key not configured", error.Message);
+        Assert.Contains("Settings", error.Message);
     }
 
     // --- AiProvidersController ---
@@ -113,6 +147,24 @@ public class AiProviderSelectionTests
         Assert.True(custom.ApiKeyOptional);
         Assert.Null(custom.BaseUrl);
         Assert.False(providers.Single(p => p.Id == "openai").SupportsReasoning);
+        Assert.Equal("gemini-3.5-flash-lite", providers.Single(p => p.Id == "google").DefaultModel);
+    }
+
+    [Fact]
+    public void PromptDefaults_ExposeTheTemplatesWithoutCallingAProvider()
+    {
+        using var context = CreateContext();
+        var handler = new ScriptedHandler();
+        var defaults = CreateController(context, Guid.NewGuid(), handler).GetPromptDefaults();
+
+        Assert.Contains("{text}", defaults.SentenceTranslation);
+        Assert.Contains("{sentenceContext}", defaults.SelectionTranslation);
+        Assert.Contains("<o s=\"N\">", defaults.FullTextTranslation);
+        Assert.Contains("{explanationLanguage}", defaults.SentenceExplanation);
+        Assert.Contains("{maxLength}", defaults.Story);
+        Assert.Contains("{maxSummaryWords}", defaults.Summarization);
+        Assert.Contains("{wordList}", defaults.VocabularyPractice);
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]
@@ -182,7 +234,10 @@ public class AiProviderSelectionTests
 
         Assert.Null(result.Error);
         Assert.Equal(new[] { "a/model", "z/model" }, result.Models);
-        Assert.Equal("https://openrouter.ai/api/v1/models", Assert.Single(handler.Requests).Uri.ToString());
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal("https://openrouter.ai/api/v1/models", request.Uri.ToString());
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Empty(request.Body);
     }
 
     [Fact]
@@ -216,27 +271,18 @@ public class AiProviderSelectionTests
     private static AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
-    private static IConfiguration GeminiConfig() =>
-        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["Gemini:ApiKey"] = "server-key" }).Build();
+    private static OpenAiCompatibleChatClient UnusedClient() => CreateClient(new ScriptedHandler());
 
-    private static IHttpClientFactory NoHttp() => Mock.Of<IHttpClientFactory>(f => f.CreateClient(It.IsAny<string>()) == new HttpClient());
-
-    private static OpenAiCompatibleChatClient ChatClient() =>
-        new(NoHttp(), NullLogger<OpenAiCompatibleChatClient>.Instance);
-
-    private static TranslationServiceFactory TranslationFactory(AppDbContext context) => new(
-        new GeminiTranslationService(GeminiConfig(), NullLogger<GeminiTranslationService>.Instance, Mock.Of<ILanguageService>(), NoHttp()),
-        new OpenAiCompatibleTranslationService(ChatClient(), NullLogger<OpenAiCompatibleTranslationService>.Instance, Mock.Of<ILanguageService>()),
+    private static TranslationServiceFactory TranslationFactory(AppDbContext context, OpenAiCompatibleChatClient? client = null) => new(
+        new OpenAiCompatibleTranslationService(client ?? UnusedClient(), NullLogger<OpenAiCompatibleTranslationService>.Instance, Mock.Of<ILanguageService>()),
         context);
 
-    private static StoryGenerationServiceFactory StoryFactory(AppDbContext context) => new(
-        new GeminiStoryGenerationService(GeminiConfig(), NullLogger<GeminiStoryGenerationService>.Instance, NoHttp()),
-        new OpenAiCompatibleStoryGenerationService(ChatClient(), NullLogger<OpenAiCompatibleStoryGenerationService>.Instance),
+    private static StoryGenerationServiceFactory StoryFactory(AppDbContext context, OpenAiCompatibleChatClient? client = null) => new(
+        new OpenAiCompatibleStoryGenerationService(client ?? UnusedClient(), NullLogger<OpenAiCompatibleStoryGenerationService>.Instance),
         context);
 
-    private static SummarizationServiceFactory SummarizationFactory(AppDbContext context) => new(
-        new GeminiSummarizationService(GeminiConfig(), NullLogger<GeminiSummarizationService>.Instance, NoHttp()),
-        new OpenAiCompatibleSummarizationService(ChatClient(), NullLogger<OpenAiCompatibleSummarizationService>.Instance),
+    private static SummarizationServiceFactory SummarizationFactory(AppDbContext context, OpenAiCompatibleChatClient? client = null) => new(
+        new OpenAiCompatibleSummarizationService(client ?? UnusedClient(), NullLogger<OpenAiCompatibleSummarizationService>.Instance),
         context);
 
     private static AiProvidersController CreateController(AppDbContext context, Guid userId, ScriptedHandler handler) =>

@@ -75,19 +75,19 @@ namespace LinguaReadApi.Services.Ai
     public static class AiProviderResolver
     {
         /// <summary>
-        /// The user's selected catalog provider, or null when AI tasks should use the built-in Gemini
-        /// services: Gemini is selected, or the selected provider is missing its key, model or URL.
+        /// Resolves the user's selected AI provider from their saved settings.
         /// </summary>
-        public static async Task<AiProviderConnection?> ResolveActiveAsync(AppDbContext context, Guid userId, CancellationToken ct = default)
+        public static async Task<AiProviderConnection> ResolveActiveAsync(AppDbContext context, Guid userId, CancellationToken ct = default)
         {
-            var settings = await context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct);
-            if (settings == null) return null;
-
-            var definition = AiProviderCatalog.Find(settings.AiProvider);
-            if (definition == null) return null;
+            var settings = await context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct)
+                ?? new UserSettings { UserId = userId };
+            var definition = AiProviderCatalog.Find(AiProviderCatalog.NormalizeSelection(settings.AiProvider))
+                ?? throw new TranslationProviderNotConfiguredException("AI", "Choose an AI provider in Settings → AI Provider.");
 
             var config = await FindConfigAsync(context, userId, definition.Id, ct);
-            return AiProviderConnection.TryCreate(definition, config, settings, out _);
+            return AiProviderConnection.TryCreate(definition, config, settings, out var problem)
+                ?? throw new TranslationProviderNotConfiguredException(definition.DisplayName,
+                    $"{problem}. Update your settings under Settings → AI Provider.");
         }
 
         public static Task<UserAiProvider?> FindConfigAsync(AppDbContext context, Guid userId, string providerId, CancellationToken ct = default) =>

@@ -53,6 +53,16 @@ namespace LinguaReadApi.Controllers
             }).ToList();
         }
 
+        [HttpGet("prompt-defaults")]
+        public AiPromptDefaultsDto GetPromptDefaults() => new(
+            AiPromptTemplates.SentenceTranslation,
+            AiPromptTemplates.SelectionTranslation,
+            AiPromptTemplates.FullTextTranslation,
+            AiPromptTemplates.SentenceExplanation,
+            AiPromptTemplates.Story,
+            AiPromptTemplates.Summarization,
+            AiPromptTemplates.VocabularyPractice);
+
         // POST: api/aiproviders/deepseek/test
         // Sends a tiny chat completion with the provider's saved key and default model.
         [HttpPost("{provider}/test")]
@@ -102,6 +112,7 @@ namespace LinguaReadApi.Controllers
         // GET: api/aiproviders/deepseek/models
         // The model ids the provider offers, fetched with the user's saved key.
         [HttpGet("{provider}/models")]
+        [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
         public async Task<ActionResult<AiProviderModelsDto>> GetModels(string provider)
         {
             // Listing the models is how the user picks the first one, so no model is needed yet.
@@ -129,13 +140,23 @@ namespace LinguaReadApi.Controllers
                 return (null, null, NotFound(new { message = $"Unknown AI provider '{provider}'." }));
             }
 
-            var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId)
+            var ct = HttpContext.RequestAborted;
+            var settings = await _context.UserSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct)
                            ?? new Models.UserSettings { UserId = userId };
-            var config = await AiProviderResolver.FindConfigAsync(_context, userId, definition.Id);
+            var config = await AiProviderResolver.FindConfigAsync(_context, userId, definition.Id, ct);
             var connection = AiProviderConnection.TryCreate(definition, config, settings, out var problem, requireModel);
             return (connection, problem, null);
         }
     }
+
+    public sealed record AiPromptDefaultsDto(
+        string SentenceTranslation,
+        string SelectionTranslation,
+        string FullTextTranslation,
+        string SentenceExplanation,
+        string Story,
+        string Summarization,
+        string VocabularyPractice);
 
     public class AiProviderInfoDto
     {

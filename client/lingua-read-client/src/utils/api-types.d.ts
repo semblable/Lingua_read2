@@ -151,6 +151,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/AiProviders/prompt-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["AiPromptDefaultsDto"];
+                        "application/json": components["schemas"]["AiPromptDefaultsDto"];
+                        "text/json": components["schemas"]["AiPromptDefaultsDto"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/AiProviders/{provider}/test": {
         parameters: {
             query?: never;
@@ -6009,6 +6046,15 @@ export interface components {
         AddTermsBatchResultDto: {
             message?: string | null;
             words?: components["schemas"]["WordResponseDto"][] | null;
+        };
+        AiPromptDefaultsDto: {
+            sentenceTranslation?: string | null;
+            selectionTranslation?: string | null;
+            fullTextTranslation?: string | null;
+            sentenceExplanation?: string | null;
+            story?: string | null;
+            summarization?: string | null;
+            vocabularyPractice?: string | null;
         };
         AiProviderConfigDto: {
             baseUrl?: string | null;

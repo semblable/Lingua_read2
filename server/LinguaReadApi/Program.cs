@@ -236,25 +236,13 @@ builder.Services.AddScoped<AzureTranslationService>();
 builder.Services.AddScoped<GoogleTranslationService>();
 builder.Services.AddScoped<IWordTranslationServiceFactory, WordTranslationServiceFactory>();
 
-// Register Gemini Translation Service for sentences (concrete type for factory)
-builder.Services.AddScoped<GeminiTranslationService>();
-builder.Services.AddScoped<ISentenceTranslationService, GeminiTranslationService>();
-
-// Register Gemini Story Generation Service (concrete type for factory)
-builder.Services.AddScoped<GeminiStoryGenerationService>();
-builder.Services.AddScoped<IStoryGenerationService, GeminiStoryGenerationService>();
-
-// Register Gemini Summarization Service (concrete type for factory)
-builder.Services.AddScoped<GeminiSummarizationService>();
-builder.Services.AddScoped<ISummarizationService, GeminiSummarizationService>();
-
 // Register the OpenAI-compatible provider services (OpenRouter, DeepSeek, ... see AiProviderCatalog)
 builder.Services.AddScoped<OpenAiCompatibleChatClient>();
 builder.Services.AddScoped<OpenAiCompatibleTranslationService>();
 builder.Services.AddScoped<OpenAiCompatibleStoryGenerationService>();
 builder.Services.AddScoped<OpenAiCompatibleSummarizationService>();
 
-// Register Service Factories (select between built-in Gemini and the user's AI provider)
+// Bind AI services to the selected provider from the user's settings.
 builder.Services.AddScoped<ITranslationServiceFactory, TranslationServiceFactory>();
 builder.Services.AddScoped<IStoryGenerationServiceFactory, StoryGenerationServiceFactory>();
 builder.Services.AddScoped<ISummarizationServiceFactory, SummarizationServiceFactory>();

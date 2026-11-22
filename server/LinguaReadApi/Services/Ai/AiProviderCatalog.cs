@@ -39,9 +39,8 @@ namespace LinguaReadApi.Services.Ai
 
     public static class AiProviderCatalog
     {
-        /// <summary>The server-configured Gemini services. Not an entry in <see cref="Providers"/>: it has no per-user config.</summary>
-        public const string BuiltInGemini = "gemini";
-
+        public const string Disabled = "none";
+        public const string Google = "google";
         public const string OpenRouter = "openrouter";
         public const string DeepSeek = "deepseek";
         public const string Custom = "custom";
@@ -57,9 +56,9 @@ namespace LinguaReadApi.Services.Ai
             new AiProviderDefinition("openai", "OpenAI", "https://api.openai.com/v1",
                 DefaultModel: null, "sk-...", "https://platform.openai.com/api-keys",
                 "https://platform.openai.com/docs/models"),
-            new AiProviderDefinition("google", "Google Gemini (your own key)",
+            new AiProviderDefinition(Google, "Google Gemini",
                 "https://generativelanguage.googleapis.com/v1beta/openai",
-                DefaultModel: null, "AIza...", "https://aistudio.google.com/apikey",
+                DefaultModel: "gemini-3.5-flash-lite", "AIza...", "https://aistudio.google.com/apikey",
                 "https://ai.google.dev/gemini-api/docs/models"),
             new AiProviderDefinition("mistral", "Mistral", "https://api.mistral.ai/v1",
                 DefaultModel: null, "", "https://console.mistral.ai/api-keys",
@@ -78,17 +77,20 @@ namespace LinguaReadApi.Services.Ai
         public static AiProviderDefinition? Find(string? id) =>
             id != null && ById.TryGetValue(id.Trim(), out var definition) ? definition : null;
 
-        /// <summary>Normalizes a provider id from a request: a catalog id or the built-in Gemini, else null.</summary>
+        /// <summary>Returns the provider selection. The former shared Gemini setup requires a new selection.</summary>
         public static string? NormalizeSelection(string? id)
         {
             if (string.IsNullOrWhiteSpace(id)) return null;
-            var trimmed = id.Trim().ToLowerInvariant();
-            if (trimmed == BuiltInGemini) return BuiltInGemini;
+            var trimmed = id.Trim();
+            if (trimmed.Equals("gemini", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals(Disabled, StringComparison.OrdinalIgnoreCase))
+            {
+                return Disabled;
+            }
+
+
             return Find(trimmed)?.Id;
         }
-
-        /// <summary>Whether the selection routes AI tasks to one of the catalog providers rather than built-in Gemini.</summary>
-        public static bool IsExternal(string? selection) => Find(selection) != null;
 
         /// <summary>
         /// Checks a user-supplied base URL for the custom provider and returns it without a trailing

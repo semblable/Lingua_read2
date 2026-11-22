@@ -29,7 +29,6 @@ namespace LinguaReadApi.Services.Ai
 
             try
             {
-                var defaultPrompt = SummarizationPrompt.Build(text, sourceLanguage, targetLanguage, maxSummaryWords);
                 var summarizationVars = new Dictionary<string, string?>
                 {
                     ["text"] = text,
@@ -39,7 +38,7 @@ namespace LinguaReadApi.Services.Ai
                 };
                 var prompt = AiTaskConfig.ResolvePromptOrDefault(
                     connection.Settings.CustomSummarizationPrompt,
-                    defaultPrompt,
+                    AiPromptTemplates.Summarization,
                     summarizationVars,
                     out var unknownSummarizationPlaceholders);
                 if (unknownSummarizationPlaceholders.Count > 0)
@@ -52,12 +51,10 @@ namespace LinguaReadApi.Services.Ai
                 {
                     Model = connection.ModelFor(AiTask.Summarization),
                     Messages = new[] { new ChatMessage { Role = "user", Content = prompt } },
-                    Temperature = 0.3,
                     // Generous budget: thinking-capable models (Gemini 2.5/3, DeepSeek R1, etc.)
                     // spend tokens on reasoning before visible output; a tight cap returns empty
                     // content with finishReason=length.
-                    MaxTokens = Math.Max(8192, maxSummaryWords * 20),
-                    TopP = 1.0
+                    MaxTokens = Math.Max(8192, maxSummaryWords * 20)
                 };
                 AiReasoningOptions.ApplyForStory(request, connection.Definition.ReasoningStyle, connection.Settings);
 

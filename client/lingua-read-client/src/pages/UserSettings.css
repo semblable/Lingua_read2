@@ -137,6 +137,49 @@
   border-bottom-color: rgba(255, 255, 255, 0.06);
 }
 
+.settings-ai .btn-outline-secondary {
+  --bs-btn-color: var(--theme-text);
+  --bs-btn-border-color: var(--theme-text-muted);
+  --bs-btn-hover-color: var(--theme-surface-bg);
+  --bs-btn-hover-bg: var(--theme-text);
+  --bs-btn-hover-border-color: var(--theme-text);
+  --bs-btn-active-color: var(--theme-surface-bg);
+  --bs-btn-active-bg: var(--theme-text);
+  --bs-btn-active-border-color: var(--theme-text);
+}
+
+:is(.dark-theme, .classic-dark-theme) .settings-ai .btn-outline-danger {
+  --settings-danger-ink: color-mix(in srgb, var(--theme-text) 70%, var(--bs-danger));
+  --bs-btn-color: var(--settings-danger-ink);
+  --bs-btn-border-color: var(--settings-danger-ink);
+  --bs-btn-hover-color: var(--theme-surface-bg);
+  --bs-btn-hover-bg: var(--settings-danger-ink);
+  --bs-btn-hover-border-color: var(--settings-danger-ink);
+  --bs-btn-active-color: var(--theme-surface-bg);
+  --bs-btn-active-bg: var(--settings-danger-ink);
+  --bs-btn-active-border-color: var(--settings-danger-ink);
+}
+
+.dark-theme:not(.classic-dark-theme) .settings-ai .form-control::placeholder {
+  color: var(--theme-text-muted);
+  opacity: 1;
+}
+
+.settings-ai code {
+  color: inherit;
+}
+
+.ai-prompt-preview {
+  max-height: 16rem;
+  margin-top: 0.5rem;
+  padding: 0.75rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--theme-border-color);
+  border-radius: 0.375rem;
+}
+
 /* Auto-save status: a pill pinned to the bottom of the viewport, lined up with the page's
    1100px column. Fixed rather than sticky: body's global overflow-x: hidden (index.css) turns it
    into a scroll container that never scrolls, so a sticky element there never sticks. */

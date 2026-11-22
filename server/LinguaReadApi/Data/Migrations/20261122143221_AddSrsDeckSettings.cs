@@ -109,6 +109,18 @@ namespace LinguaReadApi.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // An application rollback can retain the additive schema.
+            migrationBuilder.Sql("""
+                DO $$ BEGIN
+                    LOCK TABLE "SrsReviewLogs", "SrsDeckSettings", "SrsDeckStudyEntries" IN ACCESS EXCLUSIVE MODE;
+                    IF EXISTS (SELECT 1 FROM "SrsDeckSettings")
+                        OR EXISTS (SELECT 1 FROM "SrsDeckStudyEntries")
+                        OR EXISTS (SELECT 1 FROM "SrsReviewLogs" WHERE "StudyDay" IS NOT NULL) THEN
+                        RAISE EXCEPTION 'SRS deck settings or study history exist. Preserve/export them before a schema downgrade.';
+                    END IF;
+                END $$;
+                """);
+
             migrationBuilder.DropTable(
                 name: "SrsDeckSettings");
 

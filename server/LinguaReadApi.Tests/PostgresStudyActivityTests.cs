@@ -457,6 +457,61 @@ public class PostgresStudyActivityTests
         Assert.Equal(beforeData, await Snapshot(c));
     }
 
+    [PostgresStudyFact]
+    public async Task SrsDeckMigration_PreservesSharedDefaultsAndRefusesToDropDeckData()
+    {
+        await using var db = await Database.Create(createTables: false);
+        await using var c = db.Context();
+        var migrator = c.GetService<IMigrator>();
+        const string before = "20261122134007_PreservePendingHardcoverFinishDate";
+        var day = new DateTime(2026, 11, 22, 0, 0, 0, DateTimeKind.Utc);
+        await migrator.MigrateAsync(before);
+        await Seed(c);
+        c.UserSettings.Add(new UserSettings
+        {
+            UserId = UserId, SrsMaxNewCards = 0, SrsMaxReviews = 91, SrsNewCardsIgnoreReviewLimit = true,
+            SrsNewCardOrder = "oldest", SrsDayStartHour = 6, SrsDailyStudyDate = day,
+            SrsCurrentStreak = 8, SrsLongestStreak = 14, SrsDailyNewCardsStudied = 3, SrsDailyReviewsStudied = 17
+        });
+        var card = new SrsCardReview { UserId = UserId, WordId = 1 };
+        c.SrsCardReviews.Add(card);
+        await c.SaveChangesAsync();
+        var accountSrs = c.UserSettings.AsNoTracking().Select(s => new
+        {
+            s.SrsMaxNewCards, s.SrsMaxReviews, s.SrsNewCardsIgnoreReviewLimit, s.SrsNewCardOrder, s.SrsDayStartHour,
+            s.SrsDailyStudyDate, s.SrsCurrentStreak, s.SrsLongestStreak, s.SrsDailyNewCardsStudied, s.SrsDailyReviewsStudied
+        });
+        var savedDefaults = await accountSrs.SingleAsync();
+        await migrator.MigrateAsync();
+        Assert.Equal(savedDefaults, await accountSrs.SingleAsync());
+
+        async Task AssertDowngradeRefused()
+        {
+            var error = await Assert.ThrowsAsync<PostgresException>(() => migrator.MigrateAsync(before));
+            Assert.Contains("SRS deck settings or study history exist", error.MessageText);
+        }
+
+        var deck = new SrsDeckSettings { UserId = UserId, LanguageId = 1, MaxNewCards = 5 };
+        c.SrsDeckSettings.Add(deck);
+        await c.SaveChangesAsync();
+        await AssertDowngradeRefused();
+        Assert.Equal(5, await c.SrsDeckSettings.Select(d => d.MaxNewCards).SingleAsync());
+
+        c.SrsDeckSettings.Remove(deck);
+        var studyDay = DateOnly.FromDateTime(day);
+        var log = new SrsReviewLog { UserId = UserId, SrsCardReviewId = card.SrsCardReviewId, StudyDay = studyDay };
+        c.SrsReviewLogs.Add(log);
+        await c.SaveChangesAsync();
+        await AssertDowngradeRefused();
+        Assert.Equal(studyDay, await c.SrsReviewLogs.Select(l => l.StudyDay).SingleAsync());
+
+        c.SrsReviewLogs.Remove(log);
+        c.SrsDeckStudyEntries.Add(new SrsDeckStudyEntry { UserId = UserId, LanguageId = 1, StudyDay = studyDay, IsNewCard = true });
+        await c.SaveChangesAsync();
+        await AssertDowngradeRefused();
+        Assert.Single(await c.SrsDeckStudyEntries.ToListAsync());
+    }
+
     private static string Revision => LessonStudyActivity.Revision("one two. one!", 1, null);
     private static UserActivityController Activity(AppDbContext c) => new(c, null!, NullLogger<UserActivityController>.Instance) { ControllerContext = Identity };
     private static async Task Reset(AppDbContext c) => Assert.IsType<OkObjectResult>(await new UsersController(c,

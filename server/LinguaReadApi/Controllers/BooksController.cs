@@ -984,9 +984,11 @@ namespace LinguaReadApi.Controllers
 
         // POST: api/books/5/re-split
         [HttpPost("{id}/re-split")]
-        public async Task<IActionResult> ReSplitBook(int id, [FromBody] ReSplitRequestDto request)
+        public async Task<IActionResult> ReSplitBook(int id, [FromBody] ReSplitRequestDto request, CancellationToken cancellationToken = default)
         {
             var userId = GetUserId();
+            using var hardcoverLock = _hardcoverOperationLock == null ? null
+                : await _hardcoverOperationLock.AcquireAsync(userId, cancellationToken);
             
             // 1. Reconstruct content (Use AsNoTracking to get a clean in-memory reconstruction without tracking issues)
             var bookForReconstruct = await _context.Books
@@ -2305,7 +2307,8 @@ namespace LinguaReadApi.Controllers
 
                     await using var transaction = await _context.Database.BeginTransactionAsync(LessonStudyActivity.LockedIsolation(_context));
                     await LessonStudyActivity.LockAsync(_context, userId);
-                    var now = DateTime.UtcNow;
+                    var utcNow = DateTime.UtcNow;
+                    var now = utcNow.AddTicks(-(utcNow.Ticks % TimeSpan.TicksPerMicrosecond));
 
                     var book = await _context.Books
                         .Where(b => b.BookId == id && b.UserId == userId)
@@ -2487,19 +2490,41 @@ namespace LinguaReadApi.Controllers
                     }
                     text.LastCompletedAt = now;
 
+                    var wasFinished = book.IsFinished;
                     int finishedTexts = existingFinished + (partWasFinished ? 0 : 1);
                     if (totalTexts > 0 && finishedTexts >= totalTexts)
                     {
                         book.IsFinished = true;
+                        if (!wasFinished && !book.HardcoverAutoMatchDisabled)
+                        {
+                            book.HardcoverPendingFinishAfterReadId ??= -1;
+                        }
                         completionPercentage = 100.0;
                     }
                     else
                     {
                         book.IsFinished = false;
-                        book.HardcoverPendingFinishAfterReadId = null;
+                        if (!book.RereadStartedAt.HasValue)
+                        {
+                            book.HardcoverPendingFinishAfterReadId = null;
+                        }
                         completionPercentage = totalTexts > 0
                             ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
                             : 0;
+                    }
+
+                    if (book.FinishUndoJson != null)
+                    {
+                        var undo = ReadFinishUndo(book);
+                        var undoTextIds = undo?.Parts.Select(p => p.TextId).ToArray() ?? Array.Empty<int>();
+                        var hasPendingUndoRating = undo?.RatingId is { } ratingId && book.HardcoverPendingRatingId == ratingId;
+                        var hasRemainingUndoParts = undo != null && undoTextIds.Length > 0 &&
+                            await _context.Texts.AnyAsync(t => t.BookId == id && t.TextId != text.TextId &&
+                                undoTextIds.Contains(t.TextId) && t.LastCompletedAt == undo.FinishedAt);
+                        if (!hasPendingUndoRating && !hasRemainingUndoParts)
+                        {
+                            book.FinishUndoJson = null;
+                        }
                     }
 
                     await _context.SaveChangesAsync();
@@ -2577,6 +2602,10 @@ namespace LinguaReadApi.Controllers
                     }
                     book.LastReadAt = finishedAt;
                     book.IsFinished = true;
+                    if (!book.HardcoverAutoMatchDisabled)
+                    {
+                        book.HardcoverPendingFinishAfterReadId ??= -1;
+                    }
                 }
 
                 if (rating is { } value)
@@ -2586,7 +2615,12 @@ namespace LinguaReadApi.Controllers
                     book.HardcoverPendingRatingBookId = book.HardcoverBookId;
                     if (undo != null) undo = undo with { RatingId = book.HardcoverPendingRatingId };
                 }
-                if (undo != null) book.FinishUndoJson = JsonSerializer.Serialize(undo);
+                if (undo != null)
+                {
+                    book.FinishUndoJson = CanRevertRecordedFinish(book, undo)
+                        ? JsonSerializer.Serialize(undo)
+                        : null;
+                }
 
                 await _context.SaveChangesAsync();
                 return null;
@@ -2638,7 +2672,7 @@ namespace LinguaReadApi.Controllers
                 }
                 book.IsFinished = book.Texts.Count > 0 && book.Texts.All(book.IsPartFinished);
                 book.FinishUndoJson = null;
-                book.HardcoverPendingFinishAfterReadId = null;
+                if (!book.IsFinished) book.HardcoverPendingFinishAfterReadId = null;
                 await _context.SaveChangesAsync(cancellationToken);
                 return NoContent();
             });
@@ -2663,7 +2697,8 @@ namespace LinguaReadApi.Controllers
                     return Conflict(new { message = "A reread starts from a completed book with at least one section." });
                 }
 
-                var startedAt = DateTime.UtcNow;
+                var now = DateTime.UtcNow;
+                var startedAt = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
                 book.RereadStartedAt = startedAt;
                 book.IsFinished = false;
                 book.LastReadAt = startedAt;
@@ -2683,11 +2718,23 @@ namespace LinguaReadApi.Controllers
         private static FinishUndo? ReadFinishUndo(Book book) => book.FinishUndoJson == null
             ? null : JsonSerializer.Deserialize<FinishUndo>(book.FinishUndoJson);
 
+        private static bool CanRevertRecordedFinish(Book book, FinishUndo recorded)
+        {
+            if (recorded.RatingId.HasValue && book.HardcoverPendingRatingId == recorded.RatingId)
+            {
+                return true;
+            }
+
+            var recordedPartIds = recorded.Parts.Select(part => part.TextId).ToHashSet();
+            return recordedPartIds.Count > 0 &&
+                book.Texts.Any(text => recordedPartIds.Contains(text.TextId) && text.LastCompletedAt == recorded.FinishedAt);
+        }
+
         private async Task<FinishUndo?> GetFinishUndoAsync(Book book)
         {
             if (!book.IsFinished) return null;
             var recorded = ReadFinishUndo(book);
-            if (recorded != null) return recorded;
+            if (recorded != null) return CanRevertRecordedFinish(book, recorded) ? recorded : null;
 
             // Older manual finishes stamped only their remaining sections with the book's
             // last-read time. A real completion also left an activity row or study event.

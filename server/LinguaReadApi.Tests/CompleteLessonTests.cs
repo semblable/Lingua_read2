@@ -855,9 +855,101 @@ public class CompleteLessonTests
             Assert.IsType<OkObjectResult>(rereading.Result).Value).LastSegmentIndex);
     }
 
-    private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null, HardcoverSyncChannel? hardcoverSyncChannel = null)
+    [Fact]
+    public async Task ManualFinish_ClearedWhenRemainingSectionsAreLaterCompletedViaCompleteLesson_OrWhenNoSectionsWereRemaining()
     {
-        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService, hardcoverSyncChannel: hardcoverSyncChannel)
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var secondTextId = firstTextId + 1;
+        var controller = CreateController(context, userId);
+
+        // Complete Part 1, then manually finish without a rating (stamping Part 2).
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest()));
+        Assert.NotNull((await controller.GetBook(bookId)).Value!.UndoFinishAt);
+
+        // Later completing Part 2 as a real lesson clears the manual finish undo receipt.
+        var finishedAt = (await controller.GetBook(bookId)).Value!.UndoFinishAt!.Value;
+        await controller.CompleteLesson(bookId, new CompleteLessonDto
+        {
+            TextId = secondTextId,
+            ClientEventId = "complete-part-2",
+            Repeat = true,
+            SourceRevision = LessonStudyActivity.Revision("adios", 1, null)
+        });
+
+        context.ChangeTracker.Clear();
+        var bookAfterCompletion = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Null(bookAfterCompletion.FinishUndoJson);
+        Assert.Null((await controller.GetBook(bookId)).Value!.UndoFinishAt);
+        Assert.IsType<ConflictObjectResult>(await controller.UndoBookFinish(bookId, new UndoBookFinishRequest { FinishedAt = finishedAt }));
+
+        // Calling FinishBook without a rating when all parts are already completed does not record a no-op undo.
+        bookAfterCompletion = await context.Books.SingleAsync();
+        bookAfterCompletion.IsFinished = false;
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest()));
+        Assert.Null((await context.Books.AsNoTracking().SingleAsync()).FinishUndoJson);
+        Assert.Null((await controller.GetBook(bookId)).Value!.UndoFinishAt);
+    }
+
+    [Fact]
+    public async Task FinishBook_AndCompleteLesson_RecordPendingHardcoverFinishSentinel_AndPreserveItAcrossRereadStart()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out var firstTextId);
+        var secondTextId = firstTextId + 1;
+        var channel = new HardcoverSyncChannel();
+        var controller = CreateController(context, userId, hardcoverSyncChannel: channel);
+
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        Assert.Null((await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
+
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId });
+        Assert.Equal(-1, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
+
+        // Starting a reread and completing Part 1 of 2 before Hardcover sync runs preserves the pending finish sentinel.
+        var startedResult = await controller.StartBookReread(bookId);
+        var startedAt = Assert.IsType<DateTime>(Assert.IsType<OkObjectResult>(startedResult.Result).Value);
+        Assert.Equal(0, startedAt.Ticks % TimeSpan.TicksPerMicrosecond);
+        Assert.Equal(-1, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
+
+        await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = firstTextId });
+        var midRereadBook = await context.Books.AsNoTracking().SingleAsync();
+        Assert.False(midRereadBook.IsFinished);
+        Assert.Equal(-1, midRereadBook.HardcoverPendingFinishAfterReadId);
+    }
+
+    [Fact]
+    public async Task ReSplitBook_AcquiresHardcoverOperationLockForUser()
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var operationLock = new HardcoverOperationLock();
+        var controller = CreateController(context, userId, hardcoverOperationLock: operationLock);
+
+        var heldLock = await operationLock.AcquireAsync(userId);
+        var reSplitTask = controller.ReSplitBook(bookId, new ReSplitRequestDto
+        {
+            SplitMethod = "paragraph",
+            MaxSegmentSize = 3000
+        });
+
+        Assert.False(reSplitTask.IsCompleted);
+
+        heldLock.Dispose();
+        var result = await reSplitTask.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.IsType<NoContentResult>(result);
+    }
+
+    private static BooksController CreateController(AppDbContext context, Guid userId, IHardcoverService? hardcoverService = null, HardcoverSyncChannel? hardcoverSyncChannel = null, HardcoverOperationLock? hardcoverOperationLock = null)
+    {
+        return new BooksController(context, NullLogger<BooksController>.Instance, new ChapterDetectionService(), hardcoverService, hardcoverSyncChannel: hardcoverSyncChannel, hardcoverOperationLock: hardcoverOperationLock)
         {
             ControllerContext = new ControllerContext
             {

@@ -282,7 +282,7 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         var book = await GetOwnedBookAsync(userId, bookId, includeTexts: true, cancellationToken);
-        if (book.IsRereading)
+        if (book.IsRereading && !book.HasPendingHardcoverSync)
         {
             return HardcoverProgressSyncResult.SkippedResult(bookId, RereadSyncPaused);
         }
@@ -304,6 +304,11 @@ public sealed class HardcoverService : IHardcoverService
                 cancellationToken);
             if (!match.Applied)
             {
+                if (book.HardcoverPendingFinishAfterReadId is < 0)
+                {
+                    book.HardcoverPendingFinishAfterReadId = null;
+                    await _context.SaveChangesAsync(CancellationToken.None);
+                }
                 return HardcoverProgressSyncResult.SkippedResult(bookId, match.Message);
             }
         }
@@ -353,7 +358,7 @@ public sealed class HardcoverService : IHardcoverService
             return new HardcoverSyncAllResult(Array.Empty<HardcoverProgressSyncResult>(), "Synced 0 of 0 books.");
         }
 
-        var preFailures = books.Where(book => book.IsRereading).ToDictionary(book => book.BookId,
+        var preFailures = books.Where(book => book.IsRereading && !book.HasPendingHardcoverSync).ToDictionary(book => book.BookId,
             book => HardcoverProgressSyncResult.SkippedResult(book.BookId, RereadSyncPaused));
         var claimedHardcoverBookIds = books
             .Where(b => b.HardcoverBookId.HasValue)
@@ -362,7 +367,7 @@ public sealed class HardcoverService : IHardcoverService
 
         // 1. Batch-fetch missing metadata for already-matched books (chunks of 50).
         var matchedNeedingMeta = books
-            .Where(b => !b.IsRereading && b.HardcoverBookId.HasValue && HasMissingMetadata(b))
+            .Where(b => (!b.IsRereading || b.HasPendingHardcoverSync) && b.HardcoverBookId.HasValue && HasMissingMetadata(b))
             .ToList();
 
         foreach (var chunk in matchedNeedingMeta.Chunk(MetadataBatchSize))
@@ -394,7 +399,7 @@ public sealed class HardcoverService : IHardcoverService
         }
 
         // 2. Match unmatched books and fill their metadata from the returned candidate.
-        foreach (var book in books.Where(b => !b.IsRereading && !b.HardcoverBookId.HasValue && !b.HardcoverAutoMatchDisabled))
+        foreach (var book in books.Where(b => (!b.IsRereading || b.HasPendingHardcoverSync) && !b.HardcoverBookId.HasValue && !b.HardcoverAutoMatchDisabled))
         {
             try
             {
@@ -415,6 +420,10 @@ public sealed class HardcoverService : IHardcoverService
                 }
                 else
                 {
+                    if (book.HardcoverPendingFinishAfterReadId is < 0)
+                    {
+                        book.HardcoverPendingFinishAfterReadId = null;
+                    }
                     preFailures[book.BookId] = HardcoverProgressSyncResult.SkippedResult(book.BookId, match.Message);
                 }
             }
@@ -704,8 +713,8 @@ public sealed class HardcoverService : IHardcoverService
 
     private static bool HasFinishedRead(Book book, HardcoverUserBook remote) =>
         remote.StatusId == ReadStatus && remote.ActiveReadId == null &&
-        (remote.CompletedReadId.GetValueOrDefault() > book.HardcoverPendingFinishAfterReadId.GetValueOrDefault() ||
-            (book.HardcoverPendingFinishAfterReadId.HasValue && remote.CompletedPendingRead));
+        (remote.CompletedReadId.GetValueOrDefault() > Math.Max(0, book.HardcoverPendingFinishAfterReadId.GetValueOrDefault()) ||
+            (book.HardcoverPendingFinishAfterReadId is >= 0 && remote.CompletedPendingRead));
 
     private async Task<(HardcoverProgressSyncResult Result, HardcoverUserBook? UpdatedRemote)> SyncProgressCoreAsync(
         Guid userId,
@@ -726,10 +735,14 @@ public sealed class HardcoverService : IHardcoverService
             pendingRatingId = null;
         }
         if (pendingRatingId.HasValue) rating = book.HardcoverPendingRating;
-        var allPartsFinished = book.Texts.Count > 0 && book.Texts.All(t => t.IsFinished);
-        var anyPartFinished = book.Texts.Any(t => t.IsFinished);
-        var isFinished = book.IsFinished || allPartsFinished;
-        var completion = CalculatePartCompletion(book);
+        if (book.IsRereading && !pendingRatingId.HasValue && !book.HardcoverPendingFinishAfterReadId.HasValue)
+        {
+            return (HardcoverProgressSyncResult.SkippedResult(book.BookId, RereadSyncPaused), prefetchedRemote);
+        }
+        var allPartsFinished = book.Texts.Count > 0 && book.Texts.All(book.IsPartFinished);
+        var anyPartFinished = book.Texts.Any(book.IsPartFinished);
+        var isFinished = book.IsFinished || allPartsFinished || book.HardcoverPendingFinishAfterReadId.HasValue || (book.IsRereading && pendingRatingId.HasValue);
+        var completion = isFinished ? 100 : CalculatePartCompletion(book);
         if (!isFinished)
         {
             book.HardcoverPendingFinishAfterReadId = null;
@@ -746,7 +759,7 @@ public sealed class HardcoverService : IHardcoverService
             ? prefetchedRemote
             : await FindUserBookAsync(userId, token, book, cancellationToken);
         if (usePrefetchedRemote && remote is { StatusId: ReadStatus, ActiveReadId: null } && !HasFinishedRead(book, remote) &&
-            book.HardcoverPendingFinishAfterReadId is { } earlierReadId && book.HardcoverUserBookReadId <= earlierReadId)
+            book.HardcoverPendingFinishAfterReadId is >= 0 and var earlierReadId && book.HardcoverUserBookReadId <= earlierReadId)
         {
             // The active read at the start of the finish can have an older ID than the history.
             remote = await FindUserBookAsync(userId, token, book, cancellationToken);
@@ -759,7 +772,7 @@ public sealed class HardcoverService : IHardcoverService
         {
             book.HardcoverUserBookId = null;
         }
-        if (remote?.ActiveReadId == null && !book.HardcoverPendingFinishAfterReadId.HasValue)
+        if (remote?.ActiveReadId == null && book.HardcoverPendingFinishAfterReadId is null or < 0)
         {
             book.HardcoverUserBookReadId = null;
         }
@@ -811,7 +824,7 @@ public sealed class HardcoverService : IHardcoverService
             }
         }
 
-        if (isFinished && !alreadyFinishedOnHardcover && !book.HardcoverPendingFinishAfterReadId.HasValue)
+        if (isFinished && !alreadyFinishedOnHardcover && book.HardcoverPendingFinishAfterReadId is null or < 0)
         {
             // A retry must distinguish this read from any entries completed before the finish.
             book.HardcoverPendingFinishAfterReadId = remote?.CompletedReadId ?? 0;
@@ -1763,6 +1776,7 @@ public sealed class HardcoverService : IHardcoverService
 
     private void ApplyMatch(Book book, HardcoverBookCandidate candidate, bool editionExplicitlyChosen)
     {
+        var hadDifferentHardcoverBook = book.HardcoverBookId is { } previousBookId && previousBookId != candidate.BookId;
         var bookChanged = book.HardcoverBookId != candidate.BookId;
         if (bookChanged)
         {
@@ -1771,7 +1785,10 @@ public sealed class HardcoverService : IHardcoverService
             book.HardcoverLastSyncedAt = null;
             book.HardcoverSlug = null;
             book.HardcoverMatchedAt = UtcNow().UtcDateTime;
-            book.HardcoverPendingFinishAfterReadId = null;
+            if (hadDifferentHardcoverBook || book.HardcoverPendingFinishAfterReadId is >= 0)
+            {
+                book.HardcoverPendingFinishAfterReadId = null;
+            }
             if (book.HardcoverPendingRatingBookId is { } ratedBookId && ratedBookId != candidate.BookId)
             {
                 ClearPendingRating(book);
@@ -2173,7 +2190,7 @@ public sealed class HardcoverService : IHardcoverService
             }
             """;
 
-        var pendingReadId = book.HardcoverPendingFinishAfterReadId.HasValue ? book.HardcoverUserBookReadId.GetValueOrDefault() : 0;
+        var pendingReadId = book.HardcoverPendingFinishAfterReadId is >= 0 ? book.HardcoverUserBookReadId.GetValueOrDefault() : 0;
         var data = await ExecuteGraphQlAsync(userId, token, query, new { bookId = book.HardcoverBookId!.Value, pendingReadId }, cancellationToken);
         var me = GetMeElement(data);
         if (!me.TryGetProperty("user_books", out var userBooks) || userBooks.ValueKind != JsonValueKind.Array)
@@ -2445,7 +2462,16 @@ public sealed class HardcoverService : IHardcoverService
 
     private string ResolveFinishedAtDate(Book book)
     {
-        var completedAt = book.Texts.Where(text => text.IsFinished).Max(text => text.LastCompletedAt);
+        var completedTexts = book.Texts.Where(text => text.IsFinished);
+        if (book.IsRereading && book.RereadStartedAt is { } rereadStartedAt)
+        {
+            var priorPassAt = completedTexts
+                .Where(text => text.LastCompletedAt <= rereadStartedAt)
+                .Max(text => text.LastCompletedAt);
+            return (priorPassAt ?? rereadStartedAt).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        var completedAt = completedTexts.Max(text => text.LastCompletedAt);
         return (completedAt ?? book.LastReadAt ?? UtcNow().UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 

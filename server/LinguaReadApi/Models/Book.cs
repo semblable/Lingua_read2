@@ -52,7 +52,8 @@ namespace LinguaReadApi.Models
         public decimal? HardcoverPendingRating { get; set; }
         public Guid? HardcoverPendingRatingId { get; set; }
         public int? HardcoverPendingRatingBookId { get; set; }
-        // Latest completed remote read before attempting a finish. Zero means there was no prior read.
+        // Latest completed remote read before attempting a finish. Zero means there was no prior read;
+        // -1 means a finish is pending locally before the remote baseline has been fetched.
         public int? HardcoverPendingFinishAfterReadId { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -71,6 +72,8 @@ namespace LinguaReadApi.Models
         public string? FinishUndoJson { get; set; }
 
         internal bool IsRereading => !IsFinished && RereadStartedAt.HasValue;
+        internal bool HasPendingHardcoverSync =>
+            HardcoverPendingRatingId.HasValue || HardcoverPendingFinishAfterReadId.HasValue;
 
         // Text.IsFinished records lifetime completion. A reread tracks the current pass separately.
         internal bool IsPartFinished(Text part) =>

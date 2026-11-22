@@ -119,6 +119,40 @@ public class OpenAiCompatibleServicesTests
     }
 
     [Fact]
+    public async Task SelectionTranslation_WithCustomPromptWithoutSentenceContext_AppendsSentenceContext()
+    {
+        var handler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("world")));
+        var connection = DeepSeekWithOverrides(new UserSettings
+        {
+            CustomTranslationPrompt = AiPromptTemplates.SentenceTranslation
+        });
+
+        var result = await Translation(handler).TranslateSelectionWithContextAsync("mundo", "Olá mundo", "pt", "EN", connection);
+
+        Assert.Equal("world", result);
+        var prompt = Body(handler).GetProperty("messages")[0].GetProperty("content").GetString()!;
+        Assert.Contains("Text:\nmundo", prompt.Replace("\r\n", "\n"));
+        Assert.Contains("Sentence context (for meaning only; translate only the text above):\nOlá mundo", prompt.Replace("\r\n", "\n"));
+        Assert.DoesNotContain("{text}", prompt);
+    }
+
+    [Fact]
+    public async Task SentenceTranslation_WithCustomPromptUsingSelectionPlaceholders_SubstitutesSentenceText()
+    {
+        var handler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("Hello world")));
+        var connection = DeepSeekWithOverrides(new UserSettings
+        {
+            CustomTranslationPrompt = "Translate {selectedText} (context: {sentenceContext}) from {sourceLanguage} to {targetLanguage}"
+        });
+
+        var result = await Translation(handler).TranslateSentenceAsync("Olá mundo", "pt", "EN", connection);
+
+        Assert.Equal("Hello world", result);
+        var prompt = Body(handler).GetProperty("messages")[0].GetProperty("content").GetString();
+        Assert.Equal("Translate Olá mundo (context: Olá mundo) from pt to EN", prompt);
+    }
+
+    [Fact]
     public async Task Story_UsesTheStoryModel_AndReportsAnEmptyAnswer()
     {
         var handler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("")));

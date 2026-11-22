@@ -1633,6 +1633,96 @@ public class HardcoverServiceTests
     }
 
     [Fact]
+    public async Task HardcoverSyncBackgroundService_RecoversUnratedFinish_AndSyncsPendingFinishAndRatingDuringReread()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var channel = new HardcoverSyncChannel();
+        var delivered = new TaskCompletionSource<HardcoverProgressSyncResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handler = new QueueMessageHandler([
+            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "edition_id": 123, "user_book_reads": [{ "id": 888, "edition_id": 123, "finished_at": null }] }] }] } }"""),
+            JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3, "edition_id": 123 } } } }"""),
+            JsonResponse("""{ "data": { "update_user_book_read": { "id": 888, "error": null, "user_book_read": { "id": 888 } } } }""")
+        ]);
+        var services = new ServiceCollection();
+        services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<IHardcoverService>(scope => new DelegateHardcoverService(async (uid, bookId, requireSync, _, ct) =>
+        {
+            var svc = CreateService(scope.GetRequiredService<AppDbContext>(), handler);
+            svc.UtcNow = () => new DateTimeOffset(2026, 11, 22, 12, 0, 0, TimeSpan.Zero);
+            var res = await svc.SyncProgressAsync(uid, bookId, requireSync, cancellationToken: ct);
+            delivered.TrySetResult(res);
+            return res;
+        }));
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var userId = await SeedUserWithSettingsAsync(context, hardcoverToken: "token", syncEnabled: true);
+        var languageId = await SeedLanguageAsync(context);
+        var finishedAt = new DateTime(2026, 11, 20, 18, 0, 0, DateTimeKind.Utc);
+        var rereadStartedAt = new DateTime(2026, 11, 21, 9, 0, 0, DateTimeKind.Utc);
+        var book = new Book
+        {
+            UserId = userId,
+            LanguageId = languageId,
+            Title = "Unrated Finish Then Reread",
+            HardcoverBookId = 99,
+            HardcoverEditionId = 123,
+            PageCount = 200,
+            IsFinished = false,
+            RereadStartedAt = rereadStartedAt,
+            LastReadAt = rereadStartedAt,
+            HardcoverPendingFinishAfterReadId = -1
+        };
+        context.Books.Add(book);
+        await context.SaveChangesAsync();
+        context.Texts.AddRange(
+            new Text
+            {
+                UserId = userId,
+                LanguageId = languageId,
+                BookId = book.BookId,
+                Title = "Part 1",
+                Content = "one",
+                PartNumber = 1,
+                IsFinished = true,
+                LastCompletedAt = rereadStartedAt.AddHours(1)
+            },
+            new Text
+            {
+                UserId = userId,
+                LanguageId = languageId,
+                BookId = book.BookId,
+                Title = "Part 2",
+                Content = "two",
+                PartNumber = 2,
+                IsFinished = true,
+                LastCompletedAt = finishedAt
+            });
+        await context.SaveChangesAsync();
+
+        using var worker = new HardcoverSyncBackgroundService(channel, provider, NullLogger<HardcoverSyncBackgroundService>.Instance);
+        await worker.StartAsync(CancellationToken.None);
+        var result = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, result.StatusId);
+        Assert.Equal(100, result.CompletionPercentage);
+        Assert.Contains("\"last_read_date\":\"2026-11-20\"", handler.RequestBodies[1]);
+        Assert.Contains("\"finished_at\":\"2026-11-20\"", handler.RequestBodies[2]);
+
+        context.ChangeTracker.Clear();
+        var saved = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Null(saved.HardcoverPendingFinishAfterReadId);
+
+        // Once the pending finish from the completed read is delivered, mid-reread progress sync remains paused.
+        var postDeliveryService = CreateService(context, handler);
+        Assert.True((await postDeliveryService.SyncProgressAsync(userId, book.BookId, requireSyncEnabled: true)).Skipped);
+        Assert.True(Assert.Single((await postDeliveryService.SyncAllAsync(userId)).Results).Skipped);
+        Assert.Equal(3, handler.RequestCount);
+    }
+
+    [Fact]
     public async Task SyncProgressAsync_AcknowledgingRatingPreservesANewerRating()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

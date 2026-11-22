@@ -279,6 +279,8 @@ namespace LinguaReadApi.Services.Ai
             var vars = new Dictionary<string, string?>
             {
                 ["text"] = text,
+                ["selectedText"] = text,
+                ["sentenceContext"] = text,
                 ["sourceLanguage"] = sourceLanguage,
                 ["targetLanguage"] = targetLanguage
             };
@@ -298,7 +300,7 @@ namespace LinguaReadApi.Services.Ai
                     customPrompt, AiPromptTemplates.SentenceTranslation, vars, out var unknownTranslationPlaceholders);
                 if (unknownTranslationPlaceholders.Count > 0)
                 {
-                    _logger.LogWarning("Custom translation prompt contains unknown placeholders: {Placeholders}. Known: text, sourceLanguage, targetLanguage.",
+                    _logger.LogWarning("Custom translation prompt contains unknown placeholders: {Placeholders}. Known: text, selectedText, sentenceContext, sourceLanguage, targetLanguage.",
                         string.Join(", ", unknownTranslationPlaceholders));
                 }
             }
@@ -345,11 +347,17 @@ namespace LinguaReadApi.Services.Ai
                     ["targetLanguage"] = finalTargetCode,
                     ["text"] = selectedText
                 };
+                var customPrompt = connection.Settings.CustomTranslationPrompt;
                 string prompt = AiTaskConfig.ResolvePromptOrDefault(
-                    connection.Settings.CustomTranslationPrompt,
+                    customPrompt,
                     AiPromptTemplates.SelectionTranslation,
                     selectionVars,
                     out var unknownSelectionPlaceholders);
+                if (!string.IsNullOrWhiteSpace(customPrompt) &&
+                    !customPrompt.Contains("{sentenceContext}", StringComparison.Ordinal))
+                {
+                    prompt = $"{prompt}\n\nSentence context (for meaning only; translate only the text above):\n{sentenceContext}";
+                }
                 if (unknownSelectionPlaceholders.Count > 0)
                 {
                     _logger.LogWarning("Custom translation prompt (selection path) contains unknown placeholders: {Placeholders}. Known: selectedText, sentenceContext, sourceLanguage, targetLanguage, text.",

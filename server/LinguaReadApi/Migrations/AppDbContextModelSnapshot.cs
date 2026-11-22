@@ -99,6 +99,9 @@ namespace LinguaReadApi.Data.Migrations
                     b.Property<int?>("HardcoverPendingFinishAfterReadId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("HardcoverPendingFinishAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal?>("HardcoverPendingRating")
                         .HasPrecision(2, 1)
                         .HasColumnType("numeric(2,1)");

@@ -192,7 +192,7 @@ public sealed class HardcoverService : IHardcoverService
         book.HardcoverMatchedAt = null;
         book.HardcoverLastSyncedAt = null;
         book.HardcoverAutoMatchDisabled = true;
-        book.HardcoverPendingFinishAfterReadId = null;
+        book.ClearPendingHardcoverFinish();
         ClearPendingRating(book);
         await _context.SaveChangesAsync(cancellationToken);
     }
@@ -306,7 +306,7 @@ public sealed class HardcoverService : IHardcoverService
             {
                 if (book.HardcoverPendingFinishAfterReadId is < 0)
                 {
-                    book.HardcoverPendingFinishAfterReadId = null;
+                    book.ClearPendingHardcoverFinish();
                     await _context.SaveChangesAsync(CancellationToken.None);
                 }
                 return HardcoverProgressSyncResult.SkippedResult(bookId, match.Message);
@@ -422,7 +422,7 @@ public sealed class HardcoverService : IHardcoverService
                 {
                     if (book.HardcoverPendingFinishAfterReadId is < 0)
                     {
-                        book.HardcoverPendingFinishAfterReadId = null;
+                        book.ClearPendingHardcoverFinish();
                     }
                     preFailures[book.BookId] = HardcoverProgressSyncResult.SkippedResult(book.BookId, match.Message);
                 }
@@ -745,7 +745,7 @@ public sealed class HardcoverService : IHardcoverService
         var completion = isFinished ? 100 : CalculatePartCompletion(book);
         if (!isFinished)
         {
-            book.HardcoverPendingFinishAfterReadId = null;
+            book.ClearPendingHardcoverFinish();
             completion = Math.Min(completion, 99.99);
             if (anyPartFinished)
             {
@@ -806,7 +806,7 @@ public sealed class HardcoverService : IHardcoverService
                 book.HardcoverUserBookId = remote.UserBookId;
                 book.HardcoverUserBookReadId = null;
                 book.HardcoverLastSyncedAt = syncedNow;
-                book.HardcoverPendingFinishAfterReadId = null;
+                book.ClearPendingHardcoverFinish();
                 if (updateSettingsLastSyncAt)
                 {
                     settings.HardcoverLastSyncAt = syncedNow;
@@ -828,6 +828,7 @@ public sealed class HardcoverService : IHardcoverService
         {
             // A retry must distinguish this read from any entries completed before the finish.
             book.HardcoverPendingFinishAfterReadId = remote?.CompletedReadId ?? 0;
+            book.HardcoverPendingFinishAt ??= ResolveFinishedAt(book);
             book.HardcoverUserBookReadId = remote?.ActiveReadId;
             await _context.SaveChangesAsync(cancellationToken);
         }
@@ -873,7 +874,7 @@ public sealed class HardcoverService : IHardcoverService
         book.HardcoverUserBookId = userBookId;
         book.HardcoverUserBookReadId = userBookReadId;
         book.HardcoverLastSyncedAt = now;
-        if (isFinished) book.HardcoverPendingFinishAfterReadId = null;
+        if (isFinished) book.ClearPendingHardcoverFinish();
         if (updateSettingsLastSyncAt)
         {
             settings.HardcoverLastSyncAt = now;
@@ -1787,7 +1788,7 @@ public sealed class HardcoverService : IHardcoverService
             book.HardcoverMatchedAt = UtcNow().UtcDateTime;
             if (hadDifferentHardcoverBook || book.HardcoverPendingFinishAfterReadId is >= 0)
             {
-                book.HardcoverPendingFinishAfterReadId = null;
+                book.ClearPendingHardcoverFinish();
             }
             if (book.HardcoverPendingRatingBookId is { } ratedBookId && ratedBookId != candidate.BookId)
             {
@@ -2345,7 +2346,8 @@ public sealed class HardcoverService : IHardcoverService
         bool finished,
         CancellationToken cancellationToken)
     {
-        var finishedAt = finished ? ResolveFinishedAtDate(book) : null;
+        DateTime? finishedAt = finished ? ResolveFinishedAt(book) : null;
+        var finishedAtDate = finishedAt?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var existingReadId = userBook.ActiveReadId;
         var editionId = userBook.ActiveReadEditionId ?? userBook.EditionId ?? book.HardcoverEditionId;
         var progressPages = EstimateProgressPages(book, completion, finished, editionId);
@@ -2360,7 +2362,7 @@ public sealed class HardcoverService : IHardcoverService
                     existingReadId.Value,
                     !userBook.ActiveReadEditionId.HasValue ? editionId : null,
                     progressPages,
-                    finishedAt,
+                    finishedAtDate,
                     cancellationToken);
                 return (userBook.UserBookId, updatedId, progressPages);
             }
@@ -2382,7 +2384,7 @@ public sealed class HardcoverService : IHardcoverService
                             activeReadId,
                             !userBook.ActiveReadEditionId.HasValue ? editionId : null,
                             progressPages,
-                            finishedAt,
+                            finishedAtDate,
                             cancellationToken);
                         return (userBook.UserBookId, updatedId, progressPages);
                     }
@@ -2405,13 +2407,12 @@ public sealed class HardcoverService : IHardcoverService
             }
             """;
 
-        var startedAtDate = ResolveStartedAtDate(book);
         var insertPayload = new DatesReadInsertPayload
         {
             EditionId = editionId,
             ProgressPages = progressPages,
-            StartedAt = startedAtDate,
-            FinishedAt = finishedAt
+            StartedAt = ResolveStartedAtDate(book, finishedAt),
+            FinishedAt = finishedAtDate
         };
 
         var userBookId = userBook.UserBookId;
@@ -2460,22 +2461,27 @@ public sealed class HardcoverService : IHardcoverService
             : readId;
     }
 
-    private string ResolveFinishedAtDate(Book book)
+    private string ResolveFinishedAtDate(Book book) =>
+        ResolveFinishedAt(book).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    private DateTime ResolveFinishedAt(Book book)
     {
+        if (book.HardcoverPendingFinishAt is { } pendingFinishAt) return pendingFinishAt;
+
         var completedTexts = book.Texts.Where(text => text.IsFinished);
         if (book.IsRereading && book.RereadStartedAt is { } rereadStartedAt)
         {
             var priorPassAt = completedTexts
                 .Where(text => text.LastCompletedAt <= rereadStartedAt)
                 .Max(text => text.LastCompletedAt);
-            return (priorPassAt ?? rereadStartedAt).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            return priorPassAt ?? rereadStartedAt;
         }
 
         var completedAt = completedTexts.Max(text => text.LastCompletedAt);
-        return (completedAt ?? book.LastReadAt ?? UtcNow().UtcDateTime).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return completedAt ?? book.LastReadAt ?? UtcNow().UtcDateTime;
     }
 
-    private string ResolveStartedAtDate(Book book)
+    private string ResolveStartedAtDate(Book book, DateTime? finishedAt)
     {
         var earliestPartCompletion = book.Texts
             .Where(t => t.LastCompletedAt.HasValue)
@@ -2486,6 +2492,9 @@ public sealed class HardcoverService : IHardcoverService
         var started = earliestPartCompletion != default
             ? earliestPartCompletion
             : (book.LastReadAt ?? UtcNow().UtcDateTime);
+
+        // Rereading can replace the local completion timestamps before the earlier finish is synced.
+        if (finishedAt is { } end && started > end) started = end;
 
         return started.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }

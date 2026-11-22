@@ -507,7 +507,7 @@ describe('SrsReview', () => {
     expect(screen.getByText(/\(\+50 queued\)/)).toBeInTheDocument();
   });
 
-  it('shows accurate limit-reached alert on Session Complete without false 0/day new-limit warning', async () => {
+  it.each([0, 3])('shows the review limit reached after introducing %s new cards today', async (studiedNewCardsToday) => {
     getSrsStats.mockResolvedValue({
       ...mockStats,
       dueCount: 5,
@@ -517,9 +517,9 @@ describe('SrsReview', () => {
       dueReviewCount: 5,
       reviewableReviewCount: 0,
       maxNewCards: 0,
-      studiedNewCardsToday: 0,
+      studiedNewCardsToday,
       maxReviews: 100,
-      studiedReviewsToday: 100,
+      studiedReviewsToday: 100 - studiedNewCardsToday,
       newCardsPausedByReviewLimit: false
     });
     getSrsDueCards.mockResolvedValue([]);

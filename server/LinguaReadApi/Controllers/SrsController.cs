@@ -70,30 +70,23 @@ namespace LinguaReadApi.Controllers
             bool emitClozeSentence = ClozeReviewEnabled && (cardType is "cloze" or "mixed");
 
             var (studiedNew, studiedReviews) = StudiedOn(settings, day.Today);
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews);
+            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
             int remainingNewByNewCap = SrsQueuePolicy.RemainingNewByNewCap(maxNew, studiedNew);
 
             // Do not short-circuit when both daily quotas are exhausted: learning-phase
             // cards still apply (see validLearningCards below, which ignores these limits).
 
-            // 2. Base query for due cards (language-scoped before ad-hoc session filters so
-            // daily review-limit guardrails match GetStats for this deck).
-            var limitScopeQuery = _context.SrsCardReviews
-                .AsNoTracking()
-                .Where(scr => scr.UserId == userId && !scr.IsSuspended)
-                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
-                .Where(IsDue(now, day.TomorrowStartUtc));
-
-            if (languageId.HasValue)
-                limitScopeQuery = limitScopeQuery.Where(scr => scr.Word.LanguageId == languageId.Value);
-
-            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0)
-                ? await limitScopeQuery.CountAsync(scr => !scr.IsLearning && scr.LastReviewedAt != null)
+            // 2. Reserve review slots across all languages because the daily limits are shared.
+            var dueCards = AvailableCards(userId, now).Where(IsDue(now, day.TomorrowStartUtc));
+            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0 && remainingReviews > 0)
+                ? await CountScheduledReviewsAsync(dueCards)
                 : 0;
             int remainingNew = SrsQueuePolicy.RemainingNew(
                 maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
 
-            var query = limitScopeQuery;
+            var query = dueCards;
+            if (languageId.HasValue)
+                query = query.Where(scr => scr.Word.LanguageId == languageId.Value);
 
             if (!string.IsNullOrEmpty(status))
             {
@@ -657,11 +650,8 @@ namespace LinguaReadApi.Controllers
             var settings = await _context.UserSettings.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             var day = DayContext(settings, timezoneOffsetMinutes, now);
 
-            var cardQuery = _context.SrsCardReviews
-                .AsNoTracking()
-                .Where(scr => scr.UserId == userId)
-                .Where(scr => !scr.IsSuspended)
-                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now);
+            var availableCards = AvailableCards(userId, now);
+            var cardQuery = availableCards;
 
             if (languageId.HasValue)
             {
@@ -699,14 +689,18 @@ namespace LinguaReadApi.Controllers
             int maxNew = SrsQueuePolicy.EffectiveMaxNew(settings?.SrsMaxNewCards);
             int maxReviews = SrsQueuePolicy.EffectiveMaxReviews(settings?.SrsMaxReviews);
             bool ignoreReviewLimit = settings?.SrsNewCardsIgnoreReviewLimit ?? false;
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews);
+            int remainingReviews = SrsQueuePolicy.RemainingReviews(maxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
+            int dueReviewCountForLimits = languageId.HasValue && !ignoreReviewLimit && dueNewCount > 0 &&
+                remainingReviews > 0 && SrsQueuePolicy.RemainingNewByNewCap(maxNew, studiedNew) > 0
+                ? await CountScheduledReviewsAsync(availableCards.Where(IsDue(now, day.TomorrowStartUtc)))
+                : dueReviewCount;
             int remainingNew = SrsQueuePolicy.RemainingNew(
-                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCount, ignoreReviewLimit);
+                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
             int reviewableReviewCount = Math.Min(dueReviewCount, remainingReviews);
             int reviewableNewCount = Math.Min(dueNewCount, remainingNew);
             int reviewableCount = dueLearnCount + reviewableReviewCount + reviewableNewCount;
             bool newCardsPausedByReviewLimit = SrsQueuePolicy.IsNewPausedByReviewLimit(
-                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCount, dueNewCount, ignoreReviewLimit);
+                maxNew, maxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, dueNewCount, ignoreReviewLimit);
 
             // True retention (last 30 days): how often graduated cards were remembered when
             // they came due. Learning steps and reading credit are left out, and Hard counts
@@ -950,6 +944,14 @@ namespace LinguaReadApi.Controllers
             return scr => (scr.IsLearning && scr.NextReviewAt <= learnAheadUntil)
                 || (!scr.IsLearning && scr.NextReviewAt < tomorrowStartUtc);
         }
+
+        private IQueryable<SrsCardReview> AvailableCards(Guid userId, DateTime now) =>
+            _context.SrsCardReviews.AsNoTracking()
+                .Where(card => card.UserId == userId && !card.IsSuspended)
+                .Where(card => card.BuriedUntil == null || card.BuriedUntil <= now);
+
+        private static Task<int> CountScheduledReviewsAsync(IQueryable<SrsCardReview> dueCards) =>
+            dueCards.CountAsync(card => !card.IsLearning && card.LastReviewedAt != null);
 
         private static DateOnly? StudyDay(UserSettings? settings) =>
             settings?.SrsDailyStudyDate is { } date ? DateOnly.FromDateTime(date) : null;
@@ -1367,25 +1369,18 @@ namespace LinguaReadApi.Controllers
                 : settings!.SrsReviewOrder;
             string newCardOrder = SrsQueuePolicy.NormalizeNewCardOrder(settings?.SrsNewCardOrder);
             bool ignoreReviewLimit = settings?.SrsNewCardsIgnoreReviewLimit ?? false;
-            int remainingReviews = SrsQueuePolicy.RemainingReviews(effectiveMaxReviews, studiedReviews);
+            int remainingReviews = SrsQueuePolicy.RemainingReviews(effectiveMaxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
             int remainingNewByNewCap = SrsQueuePolicy.RemainingNewByNewCap(effectiveMaxNew, studiedNew);
 
             // 2. Fetch due cards with card type filter and daily limits
-            var limitScopeQuery = _context.SrsCardReviews
-                .AsNoTracking()
-                .Where(scr => scr.UserId == userId)
-                .Where(IsDue(now, day.TomorrowStartUtc))
-                .Where(scr => !scr.IsSuspended)
-                .Where(scr => scr.BuriedUntil == null || scr.BuriedUntil <= now)
-                .Where(scr => scr.Word.LanguageId == request.LanguageId);
-
-            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0)
-                ? await limitScopeQuery.CountAsync(scr => !scr.IsLearning && scr.LastReviewedAt != null)
+            var dueCards = AvailableCards(userId, now).Where(IsDue(now, day.TomorrowStartUtc));
+            int dueReviewCountForLimits = (!ignoreReviewLimit && remainingNewByNewCap > 0 && remainingReviews > 0)
+                ? await CountScheduledReviewsAsync(dueCards)
                 : 0;
             int remainingNew = SrsQueuePolicy.RemainingNew(
                 effectiveMaxNew, effectiveMaxReviews, studiedNew, studiedReviews, dueReviewCountForLimits, ignoreReviewLimit);
 
-            var baseQuery = limitScopeQuery;
+            var baseQuery = dueCards.Where(scr => scr.Word.LanguageId == request.LanguageId);
 
             if (!string.IsNullOrEmpty(request.Status))
             {
@@ -1687,9 +1682,9 @@ namespace LinguaReadApi.Controllers
             var selectedIds = SrsQueuePolicy.OrderNewCardIds(candidates, normalizedOrder, now, take);
             if (selectedIds.Count == 0) return new List<SrsCardReview>();
 
-            var selectedCards = await _context.SrsCardReviews
-                .AsNoTracking()
-                .Where(scr => scr.UserId == userId && selectedIds.Contains(scr.SrsCardReviewId))
+            // A card may have changed while its occurrence counts were being gathered.
+            var selectedCards = await newOnly
+                .Where(scr => selectedIds.Contains(scr.SrsCardReviewId))
                 .Include(scr => scr.Word)
                     .ThenInclude(w => w.Translation)
                 .ToDictionaryAsync(scr => scr.SrsCardReviewId);

@@ -137,6 +137,21 @@ public class OpenAiCompatibleServicesTests
     }
 
     [Fact]
+    public async Task SelectionTranslation_WithContextOnlyCustomPrompt_StillIncludesTheHighlightedText()
+    {
+        var handler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("world")));
+        var connection = DeepSeekWithOverrides(new UserSettings
+        {
+            CustomTranslationPrompt = "Use {sentenceContext} to resolve the meaning."
+        });
+
+        await Translation(handler).TranslateSelectionWithContextAsync("mundo", "Olá mundo", "pt", "EN", connection);
+
+        var prompt = Body(handler).GetProperty("messages")[0].GetProperty("content").GetString();
+        Assert.Equal("Use Olá mundo to resolve the meaning.\n\nHighlighted text to translate:\nmundo", prompt);
+    }
+
+    [Fact]
     public async Task SentenceTranslation_WithCustomPromptUsingSelectionPlaceholders_SubstitutesSentenceText()
     {
         var handler = new ScriptedHandler(Json(HttpStatusCode.OK, Completion("Hello world")));

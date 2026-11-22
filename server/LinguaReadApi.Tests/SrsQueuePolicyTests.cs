@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Security.Claims;
+using System.Threading;
 using System.Threading.Tasks;
 using LinguaReadApi.Controllers;
 using LinguaReadApi.Data;
@@ -12,6 +14,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using Xunit;
 
@@ -147,7 +150,8 @@ public class SrsQueuePolicyTests
 
     // ---- Controller integration tests (InMemory + SQLite) ----
 
-    private static async Task<(AppDbContext Context, SqliteConnection? Connection)> CreateContextAsync(bool useSqlite)
+    private static async Task<(AppDbContext Context, SqliteConnection? Connection)> CreateContextAsync(
+        bool useSqlite, params IInterceptor[] interceptors)
     {
         if (!useSqlite)
         {
@@ -161,6 +165,7 @@ public class SrsQueuePolicyTests
         await connection.OpenAsync();
         var sqliteOptions = new DbContextOptionsBuilder<AppDbContext>()
             .UseSqlite(connection)
+            .AddInterceptors(interceptors)
             .Options;
         var context = new AppDbContext(sqliteOptions);
         await context.Database.EnsureCreatedAsync();
@@ -185,6 +190,50 @@ public class SrsQueuePolicyTests
 
     private static T Unwrap<T>(ActionResult<T> result) where T : class =>
         result.Value ?? Assert.IsType<T>(Assert.IsAssignableFrom<ObjectResult>(result.Result).Value);
+
+    [Fact]
+    public async Task GetDueCards_ExcludesCardSuspendedWhileRankingNewCards()
+    {
+        var suspension = new SuspendDuringOccurrenceQuery();
+        var (context, connection) = await CreateContextAsync(true, suspension);
+        await using var _conn = connection;
+        await using var _ctx = context;
+
+        var userId = Guid.NewGuid();
+        context.Users.Add(new User { Id = userId, UserName = "reader" });
+        context.Languages.Add(new Language { LanguageId = 1, Name = "Spanish", Code = "es" });
+        context.Words.Add(new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "hola", Status = 1 });
+        context.SrsCardReviews.Add(new SrsCardReview
+        {
+            SrsCardReviewId = 1, WordId = 1, UserId = userId, NextReviewAt = DateTime.UtcNow.AddDays(-1)
+        });
+        await context.SaveChangesAsync();
+
+        var cards = Unwrap(await CreateController(context, userId).GetDueCards(languageId: 1));
+
+        Assert.True(suspension.Suspended);
+        Assert.Empty(cards);
+    }
+
+    private sealed class SuspendDuringOccurrenceQuery : DbCommandInterceptor
+    {
+        public bool Suspended { get; private set; }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (!Suspended && command.CommandText.Contains("FROM \"TextWords\"", StringComparison.Ordinal))
+            {
+                using var suspend = command.Connection!.CreateCommand();
+                suspend.Transaction = command.Transaction;
+                suspend.CommandText = """UPDATE "SrsCardReviews" SET "IsSuspended" = 1 WHERE "SrsCardReviewId" = 1""";
+                Suspended = await suspend.ExecuteNonQueryAsync(cancellationToken) == 1;
+            }
+
+            return result;
+        }
+    }
 
     [Theory]
     [InlineData(false)]
@@ -409,7 +458,7 @@ public class SrsQueuePolicyTests
     }
 
     [Fact]
-    public async Task GetDueCards_SessionFiltersPreserveDeckLevelReviewLimitGuardrail()
+    public async Task GetDueCards_SessionFiltersPreserveDailyReviewLimitGuardrail()
     {
         var (context, connection) = await CreateContextAsync(useSqlite: true);
         await using var _conn = connection;
@@ -444,9 +493,75 @@ public class SrsQueuePolicyTests
 
         var controller = CreateController(context, userId);
 
-        // Filtering to status=1 must still respect the deck-level review-limit guardrail (0 new allowed).
+        // A word-status filter cannot free slots reserved for scheduled reviews.
         var filtered = Unwrap(await controller.GetDueCards(languageId: 1, status: "1"));
         Assert.Empty(filtered);
+    }
+
+    [Fact]
+    public async Task DailyReviewLimit_IsSharedAcrossLanguagesAndQueueEntryPoints()
+    {
+        var (context, connection) = await CreateContextAsync(useSqlite: true);
+        await using var _conn = connection;
+        await using var _ctx = context;
+
+        var userId = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        context.Users.Add(new User { Id = userId, UserName = "reader" });
+        context.Languages.AddRange(
+            new Language { LanguageId = 1, Name = "Spanish", Code = "es" },
+            new Language { LanguageId = 2, Name = "French", Code = "fr" });
+        context.UserSettings.Add(new UserSettings { UserId = userId, SrsMaxNewCards = 5, SrsMaxReviews = 1 });
+        context.Words.AddRange(
+            new Word { WordId = 1, UserId = userId, LanguageId = 1, Term = "hola", Status = 3 },
+            new Word { WordId = 2, UserId = userId, LanguageId = 2, Term = "bonjour", Status = 1 });
+        context.SrsCardReviews.AddRange(
+            new SrsCardReview
+            {
+                SrsCardReviewId = 1, WordId = 1, UserId = userId, HasEverGraduated = true, Interval = 5,
+                LastReviewedAt = now.AddDays(-6), NextReviewAt = now.AddDays(-1)
+            },
+            new SrsCardReview { SrsCardReviewId = 2, WordId = 2, UserId = userId, NextReviewAt = now.AddDays(-1) });
+        await context.SaveChangesAsync();
+        var controller = CreateController(context, userId);
+
+        Assert.True(Unwrap(await controller.GetStats()).NewCardsPausedByReviewLimit);
+        var french = Unwrap(await controller.GetStats(languageId: 2));
+        Assert.True(french.NewCardsPausedByReviewLimit);
+        Assert.Equal(0, french.DueReviewCount);
+        Assert.Empty(Unwrap(await controller.GetDueCards(languageId: 2)));
+        var frenchStory = Unwrap(await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest
+        {
+            LanguageId = 2, CardType = "new", MaxWords = 3
+        }));
+        Assert.Empty(frenchStory.MicroContexts);
+        Assert.Equal(0, frenchStory.RemainingNewBudget);
+
+        var spanishCard = await context.SrsCardReviews.FindAsync(1);
+        spanishCard!.IsSuspended = true;
+        await context.SaveChangesAsync();
+        var newCard = Assert.Single(Unwrap(await controller.GetDueCards(languageId: 2)));
+        Unwrap(await controller.SubmitReview(new SrsReviewSubmitDto
+        {
+            SrsCardReviewId = newCard.SrsCardReviewId, Grade = 3
+        }));
+
+        // A scheduled review becoming available later still shares the slot already used by the new card.
+        (await context.SrsCardReviews.FindAsync(1))!.IsSuspended = false;
+        await context.SaveChangesAsync();
+        Assert.Equal(0, Unwrap(await controller.GetStats(languageId: 1)).ReviewableReviewCount);
+        Assert.Empty(Unwrap(await controller.GetDueCards(languageId: 1)));
+        var spanishStory = Unwrap(await controller.GenerateStoryFromDueWords(new SrsStoryGenerateRequest
+        {
+            LanguageId = 1, CardType = "review", MaxWords = 3
+        }));
+        Assert.Empty(spanishStory.MicroContexts);
+        Assert.Equal(0, spanishStory.RemainingReviewBudget);
+
+        (await context.UserSettings.SingleAsync()).SrsNewCardsIgnoreReviewLimit = true;
+        await context.SaveChangesAsync();
+        Assert.Equal(1, Unwrap(await controller.GetStats(languageId: 1)).ReviewableReviewCount);
+        Assert.Single(Unwrap(await controller.GetDueCards(languageId: 1)));
     }
 
     [Fact]

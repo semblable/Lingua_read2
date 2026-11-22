@@ -128,9 +128,7 @@ namespace LinguaReadApi.Models
         [Range(0, 365)]
         public int NewsDeleteUnreadAfterDays { get; set; } = 14;
 
-        // AI provider for sentence translation, explanations, stories and summaries: "gemini" (the
-        // server-configured Gemini) or a catalog id (see Services.Ai.AiProviderCatalog) whose key and
-        // models live in UserAiProviders. A catalog provider without a usable key falls back to Gemini.
+        // Selected provider for AI tasks. Keys and model overrides are stored in UserAiProviders.
         [StringLength(32)]
         public string AiProvider { get; set; } = AiProviderCatalog.Google;
 

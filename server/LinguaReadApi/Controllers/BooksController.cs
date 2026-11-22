@@ -1094,7 +1094,7 @@ namespace LinguaReadApi.Controllers
                     book.IsFinished = false;
                     book.RereadStartedAt = null;
                     book.FinishUndoJson = null;
-                    book.HardcoverPendingFinishAfterReadId = null;
+                    book.ClearPendingHardcoverFinish();
                     book.StatsUpdatedAt = null;
                     await _context.SaveChangesAsync();
 
@@ -2495,10 +2495,7 @@ namespace LinguaReadApi.Controllers
                     if (totalTexts > 0 && finishedTexts >= totalTexts)
                     {
                         book.IsFinished = true;
-                        if (!wasFinished && !book.HardcoverAutoMatchDisabled)
-                        {
-                            book.HardcoverPendingFinishAfterReadId ??= -1;
-                        }
+                        if (!wasFinished) book.QueueHardcoverFinish(now);
                         completionPercentage = 100.0;
                     }
                     else
@@ -2506,7 +2503,7 @@ namespace LinguaReadApi.Controllers
                         book.IsFinished = false;
                         if (!book.RereadStartedAt.HasValue)
                         {
-                            book.HardcoverPendingFinishAfterReadId = null;
+                            book.ClearPendingHardcoverFinish();
                         }
                         completionPercentage = totalTexts > 0
                             ? Math.Round((double)finishedTexts / totalTexts * 100, 2)
@@ -2592,7 +2589,8 @@ namespace LinguaReadApi.Controllers
                         book.HardcoverPendingRatingId, book.HardcoverPendingRatingBookId);
                     undo = new FinishUndo(finishedAt, book.LastReadAt,
                         remaining.Select(text => new FinishUndoPart(text.TextId, text.IsFinished, text.LastCompletedAt)).ToArray(),
-                        previousRating, RatingId: null);
+                        previousRating, RatingId: null,
+                        PreserveEarlierHardcoverFinish: book.HardcoverPendingFinishAfterReadId.HasValue);
 
                     // Mark the remaining sections complete without recording reading activity.
                     foreach (var text in remaining)
@@ -2602,10 +2600,7 @@ namespace LinguaReadApi.Controllers
                     }
                     book.LastReadAt = finishedAt;
                     book.IsFinished = true;
-                    if (!book.HardcoverAutoMatchDisabled)
-                    {
-                        book.HardcoverPendingFinishAfterReadId ??= -1;
-                    }
+                    book.QueueHardcoverFinish(finishedAt);
                 }
 
                 if (rating is { } value)
@@ -2672,7 +2667,12 @@ namespace LinguaReadApi.Controllers
                 }
                 book.IsFinished = book.Texts.Count > 0 && book.Texts.All(book.IsPartFinished);
                 book.FinishUndoJson = null;
-                if (!book.IsFinished) book.HardcoverPendingFinishAfterReadId = null;
+                var undoCancelsPendingFinish = !undo.PreserveEarlierHardcoverFinish ||
+                    book.HardcoverPendingFinishAt >= undo.FinishedAt;
+                if (!book.IsFinished && undoCancelsPendingFinish)
+                {
+                    book.ClearPendingHardcoverFinish();
+                }
                 await _context.SaveChangesAsync(cancellationToken);
                 return NoContent();
             });
@@ -2699,6 +2699,14 @@ namespace LinguaReadApi.Controllers
 
                 var now = DateTime.UtcNow;
                 var startedAt = now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
+                if (book.HardcoverPendingFinishAfterReadId.HasValue && !book.HardcoverPendingFinishAt.HasValue)
+                {
+                    // Recover the date for pending syncs created before we stored it separately.
+                    var lastCompletedAt = await _context.Texts
+                        .Where(t => t.BookId == id && t.UserId == userId && t.IsFinished)
+                        .MaxAsync(t => t.LastCompletedAt, cancellationToken);
+                    book.HardcoverPendingFinishAt = lastCompletedAt ?? book.LastReadAt ?? startedAt;
+                }
                 book.RereadStartedAt = startedAt;
                 book.IsFinished = false;
                 book.LastReadAt = startedAt;
@@ -2713,7 +2721,7 @@ namespace LinguaReadApi.Controllers
         private sealed record FinishUndoPart(int TextId, bool IsFinished, DateTime? LastCompletedAt);
         private sealed record PendingFinishRating(decimal? Value, Guid? Id, int? BookId);
         private sealed record FinishUndo(DateTime FinishedAt, DateTime? LastReadAt, FinishUndoPart[] Parts,
-            PendingFinishRating? PreviousRating, Guid? RatingId);
+            PendingFinishRating? PreviousRating, Guid? RatingId, bool PreserveEarlierHardcoverFinish = false);
 
         private static FinishUndo? ReadFinishUndo(Book book) => book.FinishUndoJson == null
             ? null : JsonSerializer.Deserialize<FinishUndo>(book.FinishUndoJson);

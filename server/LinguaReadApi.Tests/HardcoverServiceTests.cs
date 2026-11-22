@@ -1632,16 +1632,23 @@ public class HardcoverServiceTests
         Assert.Null(saved.HardcoverPendingRatingId);
     }
 
-    [Fact]
-    public async Task HardcoverSyncBackgroundService_RecoversUnratedFinish_AndSyncsPendingFinishAndRatingDuringReread()
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task HardcoverSyncBackgroundService_PreservesThePreviousFinishDateDuringReread(
+        bool hasStoredFinishDate, bool hasActiveRemoteRead)
     {
         var databaseName = Guid.NewGuid().ToString();
         var channel = new HardcoverSyncChannel();
         var delivered = new TaskCompletionSource<HardcoverProgressSyncResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var remoteReads = hasActiveRemoteRead ? """[{ "id": 888, "edition_id": 123, "finished_at": null }]""" : "[]";
         var handler = new QueueMessageHandler([
-            JsonResponse("""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "edition_id": 123, "user_book_reads": [{ "id": 888, "edition_id": 123, "finished_at": null }] }] }] } }"""),
+            JsonResponse($$"""{ "data": { "me": [{ "user_books": [{ "id": 777, "status_id": 2, "edition_id": 123, "user_book_reads": {{remoteReads}} }] }] } }"""),
             JsonResponse("""{ "data": { "update_user_book": { "id": 777, "error": null, "user_book": { "id": 777, "status_id": 3, "edition_id": 123 } } } }"""),
-            JsonResponse("""{ "data": { "update_user_book_read": { "id": 888, "error": null, "user_book_read": { "id": 888 } } } }""")
+            hasActiveRemoteRead
+                ? JsonResponse("""{ "data": { "update_user_book_read": { "id": 888, "error": null, "user_book_read": { "id": 888 } } } }""")
+                : JsonResponse("""{ "data": { "insert_user_book_read": { "id": 889, "error": null, "user_book_read": { "id": 889 } } } }""")
         ]);
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
@@ -1671,7 +1678,8 @@ public class HardcoverServiceTests
             IsFinished = false,
             RereadStartedAt = rereadStartedAt,
             LastReadAt = rereadStartedAt,
-            HardcoverPendingFinishAfterReadId = -1
+            HardcoverPendingFinishAfterReadId = -1,
+            HardcoverPendingFinishAt = hasStoredFinishDate ? finishedAt : null
         };
         context.Books.Add(book);
         await context.SaveChangesAsync();
@@ -1696,7 +1704,7 @@ public class HardcoverServiceTests
                 Content = "two",
                 PartNumber = 2,
                 IsFinished = true,
-                LastCompletedAt = finishedAt
+                LastCompletedAt = hasStoredFinishDate ? null : finishedAt
             });
         await context.SaveChangesAsync();
 
@@ -1710,10 +1718,15 @@ public class HardcoverServiceTests
         Assert.Equal(100, result.CompletionPercentage);
         Assert.Contains("\"last_read_date\":\"2026-11-20\"", handler.RequestBodies[1]);
         Assert.Contains("\"finished_at\":\"2026-11-20\"", handler.RequestBodies[2]);
+        if (!hasActiveRemoteRead)
+        {
+            Assert.Contains("\"started_at\":\"2026-11-20\"", handler.RequestBodies[2]);
+        }
 
         context.ChangeTracker.Clear();
         var saved = await context.Books.AsNoTracking().SingleAsync();
         Assert.Null(saved.HardcoverPendingFinishAfterReadId);
+        Assert.Null(saved.HardcoverPendingFinishAt);
 
         // Once the pending finish from the completed read is delivered, mid-reread progress sync remains paused.
         var postDeliveryService = CreateService(context, handler);

@@ -56,8 +56,11 @@ namespace LinguaReadApi.Services.Srs
         public static int EffectiveMaxReviews(int? stored) =>
             stored is > 0 ? stored.Value : SrsSchedulerSettings.DefaultMaxReviews;
 
-        public static int RemainingReviews(int maxReviews, int studiedReviews) =>
-            Math.Max(0, maxReviews - Math.Max(0, studiedReviews));
+        public static int RemainingReviews(int maxReviews, int studiedReviews, int studiedNew, bool ignoreReviewLimit)
+        {
+            int remaining = Math.Max(0, maxReviews - Math.Max(0, studiedReviews));
+            return ignoreReviewLimit ? remaining : Math.Max(0, remaining - Math.Max(0, studiedNew));
+        }
 
         public static int RemainingNewByNewCap(int maxNew, int studiedNew) =>
             Math.Max(0, maxNew - Math.Max(0, studiedNew));
@@ -79,9 +82,8 @@ namespace LinguaReadApi.Services.Srs
             int byNewCap = RemainingNewByNewCap(maxNew, studiedNew);
             if (byNewCap == 0 || ignoreReviewLimit) return byNewCap;
 
-            int reviewBudgetRoom = Math.Max(
-                0,
-                maxReviews - Math.Max(0, studiedReviews) - Math.Max(0, studiedNew) - Math.Max(0, dueReviewCount));
+            int remainingReviews = RemainingReviews(maxReviews, studiedReviews, studiedNew, ignoreReviewLimit);
+            int reviewBudgetRoom = Math.Max(0, remainingReviews - Math.Max(0, dueReviewCount));
             return Math.Min(byNewCap, reviewBudgetRoom);
         }
 

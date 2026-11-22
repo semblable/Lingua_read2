@@ -353,10 +353,17 @@ namespace LinguaReadApi.Services.Ai
                     AiPromptTemplates.SelectionTranslation,
                     selectionVars,
                     out var unknownSelectionPlaceholders);
-                if (!string.IsNullOrWhiteSpace(customPrompt) &&
-                    !customPrompt.Contains("{sentenceContext}", StringComparison.Ordinal))
+                if (!string.IsNullOrWhiteSpace(customPrompt))
                 {
-                    prompt = $"{prompt}\n\nSentence context (for meaning only; translate only the text above):\n{sentenceContext}";
+                    if (!customPrompt.Contains("{selectedText}", StringComparison.Ordinal) &&
+                        !customPrompt.Contains("{text}", StringComparison.Ordinal))
+                    {
+                        prompt = $"{prompt}\n\nHighlighted text to translate:\n{selectedText}";
+                    }
+                    if (!customPrompt.Contains("{sentenceContext}", StringComparison.Ordinal))
+                    {
+                        prompt = $"{prompt}\n\nSentence context (for meaning only; translate only the text above):\n{sentenceContext}";
+                    }
                 }
                 if (unknownSelectionPlaceholders.Count > 0)
                 {

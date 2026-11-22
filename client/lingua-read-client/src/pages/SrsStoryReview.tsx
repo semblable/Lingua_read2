@@ -315,7 +315,7 @@ const SrsStoryReview = () => {
           ? 'No new cards waiting to introduce.'
           : 'Daily new card limit reached.';
   const reviewUnavailableMessage =
-    (stats?.dueReviewCount ?? 0) > 0 && (stats?.studiedReviewsToday ?? 0) >= (stats?.maxReviews ?? 200)
+    (stats?.dueReviewCount ?? 0) > 0
       ? 'Daily review limit reached.'
       : 'No review cards due.';
 

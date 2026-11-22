@@ -1297,16 +1297,15 @@ const SrsReview = () => {
     const remainingDueToday = stats ? (stats.reviewableCount ?? stats.dueCount ?? 0) : 0;
     const hasFilterActive = onlyOneTarget || statusFilter.length < 5;
     const hasUntouchedNew = (stats?.dueNewCount ?? stats?.newCards ?? 0) > 0;
-    const hasDeferredReviews = stats?.dueReviewCount != null && stats?.reviewableReviewCount != null
+    const reviewLimitReached = stats?.dueReviewCount != null && stats?.reviewableReviewCount != null
       ? stats.dueReviewCount > stats.reviewableReviewCount
-      : (stats?.dueReviewCount ?? 1) > 0;
+      : (stats?.dueReviewCount ?? 1) > 0 && (stats?.studiedReviewsToday ?? 0) >= (stats?.maxReviews ?? 0);
     const showNewPaused = stats != null && (stats.maxNewCards ?? 0) === 0 && hasUntouchedNew;
     const showNewPausedByReviewLimit = stats?.newCardsPausedByReviewLimit === true;
     const showNewLimitReached = stats != null && !showNewPaused && !showNewPausedByReviewLimit
       && (stats.maxNewCards ?? 0) > 0 && hasUntouchedNew
       && (stats.studiedNewCardsToday ?? 0) >= (stats.maxNewCards ?? 0);
-    const showReviewLimitReached = stats != null && (stats.maxReviews ?? 0) > 0 && hasDeferredReviews
-      && (stats.studiedReviewsToday ?? 0) >= (stats.maxReviews ?? 0);
+    const showReviewLimitReached = stats != null && (stats.maxReviews ?? 0) > 0 && reviewLimitReached;
 
     return (
       <Container className="mt-4" style={{ maxWidth: '600px' }}>

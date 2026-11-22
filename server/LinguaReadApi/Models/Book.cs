@@ -55,6 +55,8 @@ namespace LinguaReadApi.Models
         // Latest completed remote read before attempting a finish. Zero means there was no prior read;
         // -1 means a finish is pending locally before the remote baseline has been fetched.
         public int? HardcoverPendingFinishAfterReadId { get; set; }
+        [JsonIgnore]
+        public DateTime? HardcoverPendingFinishAt { get; set; }
         
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         
@@ -74,6 +76,20 @@ namespace LinguaReadApi.Models
         internal bool IsRereading => !IsFinished && RereadStartedAt.HasValue;
         internal bool HasPendingHardcoverSync =>
             HardcoverPendingRatingId.HasValue || HardcoverPendingFinishAfterReadId.HasValue;
+
+        internal void QueueHardcoverFinish(DateTime finishedAt)
+        {
+            if (HardcoverAutoMatchDisabled || HardcoverPendingFinishAfterReadId.HasValue) return;
+
+            HardcoverPendingFinishAfterReadId = -1;
+            HardcoverPendingFinishAt = finishedAt;
+        }
+
+        internal void ClearPendingHardcoverFinish()
+        {
+            HardcoverPendingFinishAfterReadId = null;
+            HardcoverPendingFinishAt = null;
+        }
 
         // Text.IsFinished records lifetime completion. A reread tracks the current pass separately.
         internal bool IsPartFinished(Text part) =>
@@ -114,4 +130,4 @@ namespace LinguaReadApi.Models
         public virtual ICollection<BookTag> BookTags { get; set; } = new List<BookTag>();
         public virtual ICollection<AudiobookTrack> AudiobookTracks { get; set; } = new List<AudiobookTrack>(); // Added for Audiobook feature
     }
-} 
+}

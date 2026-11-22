@@ -910,7 +910,10 @@ public class CompleteLessonTests
         Assert.Null((await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
 
         await controller.CompleteLesson(bookId, new CompleteLessonDto { TextId = secondTextId });
-        Assert.Equal(-1, (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAfterReadId);
+        var finishedBook = await context.Books.AsNoTracking().SingleAsync();
+        Assert.Equal(-1, finishedBook.HardcoverPendingFinishAfterReadId);
+        Assert.NotNull(finishedBook.LastReadAt);
+        Assert.Equal(finishedBook.LastReadAt, finishedBook.HardcoverPendingFinishAt);
 
         // Starting a reread and completing Part 1 of 2 before Hardcover sync runs preserves the pending finish sentinel.
         var startedResult = await controller.StartBookReread(bookId);
@@ -922,6 +925,45 @@ public class CompleteLessonTests
         var midRereadBook = await context.Books.AsNoTracking().SingleAsync();
         Assert.False(midRereadBook.IsFinished);
         Assert.Equal(-1, midRereadBook.HardcoverPendingFinishAfterReadId);
+        Assert.Equal(finishedBook.HardcoverPendingFinishAt, midRereadBook.HardcoverPendingFinishAt);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task UndoRereadFinish_KeepsOnlyTheEarlierPendingHardcoverFinish(bool earlierFinishCleared, bool rereadFinishQueued)
+    {
+        await using var context = CreateContext();
+        var userId = Guid.NewGuid();
+        SeedBookWithTwoParts(context, userId, out var bookId, out _);
+        var controller = CreateController(context, userId);
+
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest()));
+        var firstFinish = (await context.Books.AsNoTracking().SingleAsync()).HardcoverPendingFinishAt;
+        Assert.NotNull(firstFinish);
+
+        Assert.IsType<OkObjectResult>((await controller.StartBookReread(bookId)).Result);
+        Assert.IsType<NoContentResult>(await controller.FinishBook(bookId, new FinishBookRequest()));
+        var undoAt = (await controller.GetBook(bookId)).Value!.UndoFinishAt!.Value;
+
+        if (earlierFinishCleared)
+        {
+            var book = await context.Books.SingleAsync();
+            book.ClearPendingHardcoverFinish();
+            if (rereadFinishQueued)
+            {
+                book.QueueHardcoverFinish(undoAt);
+                book.HardcoverPendingFinishAfterReadId = 42;
+            }
+            await context.SaveChangesAsync();
+        }
+
+        Assert.IsType<NoContentResult>(await controller.UndoBookFinish(bookId, new UndoBookFinishRequest { FinishedAt = undoAt }));
+        var saved = await context.Books.AsNoTracking().SingleAsync();
+        Assert.False(saved.IsFinished);
+        Assert.Equal(earlierFinishCleared ? null : (int?)-1, saved.HardcoverPendingFinishAfterReadId);
+        Assert.Equal(earlierFinishCleared ? null : firstFinish, saved.HardcoverPendingFinishAt);
     }
 
     [Fact]

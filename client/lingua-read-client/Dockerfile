@@ -18,7 +18,7 @@ RUN npm run build
 # the image), so without this stage the first thing to exercise it would be the
 # production container. ssl_certificate directives need real files to parse, so
 # throwaway certs are generated for the check.
-FROM nginxinc/nginx-unprivileged:stable-alpine AS config-test
+FROM nginx/nginx-unprivileged:stable-alpine AS config-test
 USER root
 RUN apk upgrade --no-cache && apk add --no-cache openssl
 COPY nginx.conf /tmp/nginx-test/nginx.conf
@@ -37,7 +37,7 @@ RUN sed -i 's/server api:5000;/server 127.0.0.1:5000;/' /tmp/nginx-test/nginx.co
 
 # -------- Runtime Stage --------
 # Unprivileged nginx: runs as uid 101, listens on 8080 (and 8443 with the SSL config).
-FROM nginxinc/nginx-unprivileged:stable-alpine AS production
+FROM nginx/nginx-unprivileged:stable-alpine AS production
 WORKDIR /usr/share/nginx/html
 
 # The html dir is root-owned; switch to root for the asset swap, then drop back.

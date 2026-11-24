@@ -23,8 +23,18 @@ ffmpeg_path=
 font_name=Segoe UI
 font_size=44
 ref_font_size=32
-margin_bottom=52
+margin_bottom=34
 max_line_width_ratio=0.84
+
+# Subtitle background box style: none | hover | always
+subtitle_box=none
+
+# Hide mpv's bottom seekbar (OSC) while the LinguaRead setup menu or session is active
+# so clicking subtitle words never triggers the seekbar (press Del anytime to toggle it): yes | no
+hide_osc_during_session=yes
+
+# Show a compact 0ms tooltip above hovered words that already have a cached/auto-translated meaning: yes | no
+hover_tooltip=yes
 
 # Default stacked reference subtitle visibility: peek | always | hidden
 default_ref_mode=peek

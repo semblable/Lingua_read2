@@ -15,7 +15,8 @@ import {
   getAiProviderModels,
   getNewsFeeds,
   getHardcoverStatus,
-  syncAllHardcover
+  syncAllHardcover,
+  createMpvToken
 } from '../utils/api';
 
 vi.mock('../utils/api', () => ({
@@ -37,7 +38,9 @@ vi.mock('../utils/api', () => ({
   addNewsFeed: vi.fn(),
   updateNewsFeed: vi.fn(),
   deleteNewsFeed: vi.fn(),
-  fetchNewsFeed: vi.fn()
+  fetchNewsFeed: vi.fn(),
+  createMpvToken: vi.fn(),
+  revokeMpvToken: vi.fn()
 }));
 
 const mockSettings = {
@@ -1136,5 +1139,24 @@ describe('UserSettings', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  test('mpv Player section renders outside settings form and does not trigger updateUserSettings', async () => {
+    createMpvToken.mockResolvedValueOnce({
+      localMode: false,
+      token: 'mpv-user-settings-test-token',
+      expiresAt: '2027-02-20T12:00:00Z'
+    });
+
+    await renderLoaded();
+
+    expect(screen.getByRole('button', { name: /mpv Player/i })).toBeInTheDocument();
+    const generateButton = screen.getByRole('button', { name: 'Generate mpv Config' });
+    expect(generateButton.closest('#settings-form')).toBeNull();
+
+    fireEvent.click(generateButton);
+
+    expect(await screen.findByDisplayValue(/api_token=mpv-user-settings-test-token/)).toBeInTheDocument();
+    expect(updateUserSettings).not.toHaveBeenCalled();
   });
 });

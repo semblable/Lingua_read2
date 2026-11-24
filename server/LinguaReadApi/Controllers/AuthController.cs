@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -73,7 +75,7 @@ namespace LinguaReadApi.Controllers
             var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, () => LoginCore(request));
             if (errorResult != null) return errorResult;
 
-            var token = GenerateJwtToken(user!);
+            var (token, _) = GenerateJwtToken(user!);
             SetAuthCookie(token);
 
             _logger.LogInformation("[AuthController] User {UserId} logged in successfully.", user!.Id);
@@ -267,7 +269,7 @@ namespace LinguaReadApi.Controllers
             if (errorResult != null) return errorResult;
 
             // Auto-login after setup
-            var token = GenerateJwtToken(user!);
+            var (token, _) = GenerateJwtToken(user!);
             SetAuthCookie(token);
 
             _logger.LogInformation("[AuthController] Password set and user {UserId} logged in via setup.", user!.Id);
@@ -298,8 +300,84 @@ namespace LinguaReadApi.Controllers
                 return (null, current);
             });
             if (errorResult != null) return errorResult;
-            SetAuthCookie(GenerateJwtToken(user!));
+            SetAuthCookie(GenerateJwtToken(user!).Token);
             return Ok(new { message = "Password changed. Other sessions have been signed out." });
+        }
+
+        [Authorize]
+        [HttpPost("mpv-token")]
+        public async Task<IActionResult> CreateMpvToken()
+        {
+            if (User.HasClaim("scope", "mpv"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Scoped mpv tokens cannot mint new tokens." });
+            }
+
+            if (LocalMode.IsEnabled(_configuration))
+            {
+                return Ok(new { localMode = true, token = string.Empty, expiresAt = (DateTime?)null });
+            }
+
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, DefaultUserId, async () =>
+            {
+                var current = await _context.Users.FindAsync(DefaultUserId);
+                if (current == null)
+                {
+                    _logger.LogError("[AuthController] Default user with ID {UserId} not found.", DefaultUserId);
+                    return (StatusCode(500, new { message = "Default user configuration error." }), null);
+                }
+
+                if (string.IsNullOrEmpty(current.SecurityStamp))
+                {
+                    current.SecurityStamp = Guid.NewGuid().ToString("D");
+                    await _context.SaveChangesAsync();
+                }
+
+                return (null, current);
+            });
+
+            if (errorResult != null) return errorResult;
+
+            var (token, expiresAt) = GenerateJwtToken(user!, "mpv");
+            return Ok(new { localMode = false, token, expiresAt });
+        }
+
+        [Authorize]
+        [HttpPost("mpv-token/revoke")]
+        public async Task<IActionResult> RevokeMpvTokens()
+        {
+            if (User.HasClaim("scope", "mpv"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Scoped mpv tokens cannot revoke tokens." });
+            }
+
+            if (LocalMode.IsEnabled(_configuration))
+            {
+                return LocalModeUnavailable();
+            }
+
+            if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+            {
+                return Unauthorized();
+            }
+
+            var (errorResult, user) = await LessonStudyActivity.AtomicAsync<(IActionResult? Error, User? User)>(_context, userId, async () =>
+            {
+                var current = await _context.Users.FindAsync(userId);
+                if (current == null)
+                {
+                    return (Unauthorized(), null);
+                }
+
+                current.SecurityStamp = Guid.NewGuid().ToString("D");
+                await _context.SaveChangesAsync();
+                return (null, current);
+            });
+
+            if (errorResult != null) return errorResult;
+
+            SetAuthCookie(GenerateJwtToken(user!).Token);
+            return Ok(new { message = "All mpv tokens and other sessions have been revoked." });
         }
 
         private IActionResult LocalModeUnavailable() => Conflict(new {
@@ -325,7 +403,7 @@ namespace LinguaReadApi.Controllers
             });
         }
 
-        private string GenerateJwtToken(User user)
+        private (string Token, DateTime ExpiresAt) GenerateJwtToken(User user, string? scope = null)
         {
             var issuer = _configuration["Jwt:Issuer"];
             var audience = _configuration["Jwt:Audience"];
@@ -346,7 +424,7 @@ namespace LinguaReadApi.Controllers
             var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var credentials = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim("security_stamp", user.SecurityStamp ?? string.Empty),
@@ -355,15 +433,21 @@ namespace LinguaReadApi.Controllers
                 new Claim(JwtRegisteredClaimNames.Iat, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             };
 
+            if (!string.IsNullOrWhiteSpace(scope))
+            {
+                claims.Add(new Claim("scope", scope));
+            }
+
+            var expiresAt = DateTime.UtcNow.AddHours(hours);
             var token = new JwtSecurityToken(
                 issuer: issuer,
                 audience: audience,
                 claims: claims,
-                expires: DateTime.UtcNow.AddHours(hours),
+                expires: expiresAt,
                 signingCredentials: credentials
             );
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+            return (new JwtSecurityTokenHandler().WriteToken(token), expiresAt);
         }
     }
 }

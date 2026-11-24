@@ -33,6 +33,7 @@ import AiPromptSettings from '../components/settings/AiPromptSettings';
 import type { AiProviderConfigField } from '../components/settings/AiProviderSettings';
 import DiscordSettings from '../components/settings/DiscordSettings';
 import HardcoverSettings from '../components/settings/HardcoverSettings';
+import MpvSettings from '../components/settings/MpvSettings';
 import DataManagementSettings from '../components/settings/DataManagementSettings';
 import PasswordSettings from '../components/settings/PasswordSettings';
 import SaveStatus from '../components/settings/SaveStatus';
@@ -46,6 +47,7 @@ const SECTIONS = [
   { id: 'ai', label: 'AI Provider', icon: '\uD83E\uDD16' },
   { id: 'discord', label: 'Discord', icon: '\uD83D\uDCE8' },
   { id: 'hardcover', label: 'Hardcover', icon: 'HC' },
+  { id: 'mpv', label: 'mpv Player', icon: '\uD83C\uDFAC' },
   { id: 'data', label: 'Data', icon: '\uD83D\uDDC4\uFE0F' },
 ];
 
@@ -899,6 +901,15 @@ const UserSettings = () => {
               />
             </div>
           </Form>
+
+          {/* mpv Player - outside form since token generation/revocation has independent actions */}
+          <div ref={el => { sectionRefs.current.mpv = el; }} className="settings-section-card mb-4">
+            <div className="settings-section-header">
+              <span className="settings-section-header-icon">{'\uD83C\uDFAC'}</span>
+              <span>mpv / mpv.net Player</span>
+            </div>
+            <MpvSettings />
+          </div>
 
           {/* Data Management - outside form since it has independent actions */}
           <div ref={el => { sectionRefs.current.data = el; }} className="settings-section-card mb-4">

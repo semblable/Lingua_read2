@@ -2,7 +2,7 @@
 // store.js consume the raw Response — they check `res.ok`, sometimes parse
 // JSON, and need to react to specific status codes.
 
-import { API_URL } from './client';
+import { API_URL, fetchApi } from './client';
 
 export type AuthUser = {
   username?: string;
@@ -69,5 +69,27 @@ export const authSetup = (password: string, setupToken?: string): Promise<Respon
       'X-Requested-With': 'XMLHttpRequest'
     },
     body: JSON.stringify({ password, setupToken })
+  });
+};
+
+export type MpvTokenResponse = {
+  localMode: boolean;
+  token: string;
+  expiresAt: string | null;
+};
+
+export type RevokeMpvTokenResponse = {
+  message: string;
+};
+
+export const createMpvToken = (): Promise<MpvTokenResponse> => {
+  return fetchApi<MpvTokenResponse>('/auth/mpv-token', {
+    method: 'POST'
+  });
+};
+
+export const revokeMpvToken = (): Promise<RevokeMpvTokenResponse> => {
+  return fetchApi<RevokeMpvTokenResponse>('/auth/mpv-token/revoke', {
+    method: 'POST'
   });
 };

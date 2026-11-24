@@ -323,10 +323,14 @@ builder.Services.AddAuthentication()
     {
         OnMessageReceived = context =>
         {
-            var cookieToken = context.Request.Cookies[".LinguaRead.Auth"];
-            if (!string.IsNullOrEmpty(cookieToken))
+            var authHeader = context.Request.Headers.Authorization.ToString();
+            if (!authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             {
-                context.Token = cookieToken;
+                var cookieToken = context.Request.Cookies[".LinguaRead.Auth"];
+                if (!string.IsNullOrEmpty(cookieToken))
+                {
+                    context.Token = cookieToken;
+                }
             }
             return Task.CompletedTask;
         },
@@ -539,6 +543,131 @@ app.UseRouting();
 // Authentication runs before the static-file middlewares so the gate below can
 // see context.User for requests to uploaded content.
 app.UseAuthentication();
+
+static bool TryMatchSinglePositiveIntSuffix(string normalizedPath, string prefix)
+{
+    if (!normalizedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    var suffix = normalizedPath.Substring(prefix.Length);
+    if (suffix.Length == 0 || suffix.Contains('/'))
+    {
+        return false;
+    }
+
+    foreach (var ch in suffix)
+    {
+        if (ch is < '0' or > '9')
+        {
+            return false;
+        }
+    }
+
+    return int.TryParse(suffix, NumberStyles.None, CultureInfo.InvariantCulture, out var id) && id > 0;
+}
+
+static bool IsAllowedMpvScopedRequest(HttpContext context)
+{
+    var rawPath = context.Request.Path.Value ?? string.Empty;
+    if (rawPath.Contains('\\') ||
+        rawPath.Contains('\0') ||
+        rawPath.Contains("//", StringComparison.Ordinal) ||
+        rawPath.Contains("%2f", StringComparison.OrdinalIgnoreCase) ||
+        rawPath.Contains("%5c", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    foreach (var segment in rawPath.Split('/', StringSplitOptions.RemoveEmptyEntries))
+    {
+        if (segment is "." or "..")
+        {
+            return false;
+        }
+    }
+
+    var normalized = rawPath.Length > 1 ? rawPath.TrimEnd('/') : rawPath;
+    if (string.IsNullOrEmpty(normalized))
+    {
+        normalized = "/";
+    }
+
+    var method = context.Request.Method;
+    var path = new PathString(normalized);
+
+    if ((HttpMethods.IsGet(method) || HttpMethods.IsPost(method)) &&
+        path.StartsWithSegments("/api/mpv", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsGet(method) &&
+        string.Equals(normalized, "/api/languages", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsPost(method) &&
+        string.Equals(normalized, "/api/words", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsPut(method) &&
+        TryMatchSinglePositiveIntSuffix(normalized, "/api/words/"))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsPost(method) &&
+        string.Equals(normalized, "/api/activity/logListening", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsPut(method) &&
+        string.Equals(normalized, "/api/activity/audiolessonprogress", StringComparison.OrdinalIgnoreCase))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsGet(method) &&
+        TryMatchSinglePositiveIntSuffix(normalized, "/api/activity/audiolessonprogress/"))
+    {
+        return true;
+    }
+
+    if (HttpMethods.IsPost(method) &&
+        (string.Equals(normalized, "/api/translation", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(normalized, "/api/sentencetranslation", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(normalized, "/api/sentencetranslation/selection", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(normalized, "/api/sentencetranslation/explain", StringComparison.OrdinalIgnoreCase)))
+    {
+        return true;
+    }
+
+    return false;
+}
+
+// Default-deny gate for scoped mpv tokens before protected static mounts and authorization.
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true &&
+        context.User.HasClaim("scope", "mpv") &&
+        !IsAllowedMpvScopedRequest(context))
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "This endpoint is not accessible with a scoped mpv token."
+        });
+        return;
+    }
+
+    await next();
+});
 
 // User-uploaded content (audio lessons, audiobook tracks, EPUB images, Hardcover covers) lives
 // under wwwroot with guessable paths (e.g. /audiobooks/{bookId}/track_1.mp3). Static-file

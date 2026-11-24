@@ -1,0 +1,40 @@
+# LinguaRead mpv / mpv.net configuration
+#
+# Placement:
+#   Windows mpv.net : %APPDATA%\mpv.net\script-opts\linguaread.conf
+#   Windows mpv     : %APPDATA%\mpv\script-opts\linguaread.conf
+#   Linux / macOS   : ~/.config/mpv/script-opts/linguaread.conf
+
+# Base URL of your LinguaRead server (no trailing slash).
+api_url=http://localhost:5000
+
+# Scoped mpv API token generated in LinguaRead -> Settings -> mpv / mpv.net Player.
+# Leave blank when LinguaRead is running in password-free LocalMode.
+api_token=
+
+# Only set to yes for a dev/staging server with a self-signed TLS certificate (keep no for valid HTTPS certs).
+allow_insecure_tls=no
+
+# Optional executable overrides (leave blank to auto-detect curl.exe/ffmpeg.exe on Windows, curl/ffmpeg elsewhere).
+curl_path=
+ffmpeg_path=
+
+# OSD typography & positioning (in 1080p-scaled virtual coordinates).
+font_name=Segoe UI
+font_size=44
+ref_font_size=32
+margin_bottom=52
+max_line_width_ratio=0.84
+
+# Default stacked reference subtitle visibility: peek | always | hidden
+default_ref_mode=peek
+
+# Pause automatically when hovering a subtitle word: yes | no
+pause_on_hover=no
+
+# Pause automatically when clicking a subtitle word: auto | yes | no
+# "auto" follows your LinguaRead UserSettings.PauseOnWordClick setting.
+pause_on_click=auto
+
+# Interval (seconds) between periodic listening-time & watch-progress syncs.
+sync_interval_seconds=60

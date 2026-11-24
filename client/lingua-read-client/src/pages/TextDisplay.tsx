@@ -2649,7 +2649,7 @@ const TextDisplay = () => {
   // Offline audio downloads are paused until caching is fixed.
   const studyControls = text?.textId ? (
     <LessonStudyPanel textId={text.textId} bookId={text.bookId} sourceRevision={text.studyRevision}
-      rereadStartedAt={book?.rereadStartedAt} hasAudio={!!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
+      rereadStartedAt={book?.rereadStartedAt} hasAudio={!!text.isAudioLesson || !!audioSrc || (book?.audiobookTracks?.length ?? 0) > 0} />
   ) : null;
   const pendingWordCount = wordStatusStates.filter(state => state.pending).length;
   const queuedWordCount = wordStatusStates.filter(state => state.queuedOffline && !state.pending).length;

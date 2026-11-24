@@ -4429,5 +4429,37 @@ describe('TextDisplay', () => {
       expect(screen.getByText('2 / 2')).toBeInTheDocument();
       expect(screen.queryByText('First')).not.toBeInTheDocument();
     });
+
+    test('mpv transcript without audioFilePath renders Listened passes without AudiobookPlayer or mobile Play audio FAB', async () => {
+      const mpvText = {
+        textId: 1,
+        title: 'mpv Episode 01',
+        content: 'Hola mundo bonito.',
+        languageId: null,
+        languageCode: 'ES',
+        languageName: 'Spanish',
+        isAudioLesson: true,
+        audioFilePath: null,
+        hasSrtContent: true,
+        words: [],
+        bookId: null
+      };
+
+      getText.mockResolvedValueOnce(mpvText);
+      const desktopRender = renderTextDisplay();
+      expect(await screen.findByText('Hola')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Listened passes:/i)).toBeInTheDocument();
+      expect(screen.queryByText('Audio Player')).not.toBeInTheDocument();
+      expect(mockAudiobookPlayer).not.toHaveBeenCalled();
+      desktopRender.unmount();
+
+      window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+      getText.mockResolvedValueOnce(mpvText);
+      renderTextDisplay();
+      expect(await screen.findByText('Hola')).toBeInTheDocument();
+      expect(screen.getByLabelText(/Listened passes:/i)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Play audio' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Audio Player')).not.toBeInTheDocument();
+    });
   });
 });

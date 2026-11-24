@@ -186,6 +186,12 @@ scripts/
 !client/lingua-read-client/scripts/
 !client/lingua-read-client/scripts/**
 
+# Allow the mpv / mpv.net integration script and example config.
+!/scripts/
+/scripts/*
+!/scripts/mpv/
+!/scripts/mpv/**
+
 # Trusted CI handoff code and its targeted tests.
 !/.github/scripts/
 /.github/scripts/*

@@ -35,6 +35,8 @@ local opts = {
   sync_interval_seconds = 60,
   listening_credit_multiplier = 1.0,
   max_line_width_ratio = 0.84,
+  cue_seek_mode = "both",
+  cue_seek_max_gap_seconds = 20,
 }
 options.read_options(opts, "linguaread")
 
@@ -207,11 +209,17 @@ local state = {
   credit_accumulated_seconds = 0,
   last_progress_pos = nil,
   last_known_pos = nil,
+  last_cue_seek_idx = nil,
+  last_cue_seek_wall = 0,
+  last_cue_seek_target = nil,
+  last_cue_seek_origin = nil,
   sync_timer = nil,
   event_seq = 0,
 
   modal_keys_bound = false,
   session_keys_bound = false,
+  cue_seek_keys_bound = false,
+  cue_seek_bound_mode = nil,
   word_hover_keys_bound = false,
   popup_keys_bound = false,
 }
@@ -1342,6 +1350,10 @@ local function reset_active_session_fields()
   state.credit_accumulated_seconds = 0
   state.last_progress_pos = nil
   state.last_known_pos = nil
+  state.last_cue_seek_idx = nil
+  state.last_cue_seek_wall = 0
+  state.last_cue_seek_target = nil
+  state.last_cue_seek_origin = nil
 end
 
 local function stop_session(reason_toast, sync_flush)
@@ -1722,11 +1734,136 @@ local function replay_current_cue()
   local cue = idx and state.cues[idx]
   if not cue then return end
   local target = math.max(0, cue.startSeconds - 0.15)
+  state.last_cue_seek_idx = nil
+  state.last_cue_seek_target = nil
+  state.last_cue_seek_origin = nil
   state.cue_end_paused_idx = nil
   mp.commandv("seek", tostring(target), "absolute", "exact")
   mp.set_property_native("pause", false)
   state.paused_by_script = false
   state.paused_by_hover = false
+end
+
+local function get_cue_seek_mode()
+  local m = trim(tostring(opts.cue_seek_mode or "both")):lower()
+  if m == "yes" or m == "true" or m == "both" then return "both" end
+  if m == "left_only" or m == "left" then return "left_only" end
+  if m == "no" or m == "false" or m == "none" or m == "off" then return "off" end
+  return "both"
+end
+
+local function seek_relative_plain(delta_seconds)
+  state.last_cue_seek_idx = nil
+  state.last_cue_seek_target = nil
+  state.last_cue_seek_origin = nil
+  state.cue_end_paused_idx = nil
+  mp.commandv("no-osd", "seek", tostring(delta_seconds), "relative")
+end
+
+local function seek_by_cue(dir)
+  local fallback_step = 5
+  if not state.active or state.live_fallback or not state.cues or #state.cues == 0 then
+    seek_relative_plain(dir * fallback_step)
+    return
+  end
+
+  local pos = mp.get_property_native("time-pos")
+  if type(pos) ~= "number" then
+    seek_relative_plain(dir * fallback_step)
+    return
+  end
+
+  local max_gap = tonumber(opts.cue_seek_max_gap_seconds)
+  if max_gap == nil then max_gap = 20 end
+  if max_gap < 0 then max_gap = 0 end
+
+  local now = mp.get_time()
+  local candidate_idx = nil
+  local gap = math.huge
+
+  local chained = state.last_cue_seek_idx
+    and (now - (state.last_cue_seek_wall or 0)) <= 0.9
+    and (
+      (state.last_cue_seek_target and math.abs(pos - state.last_cue_seek_target) <= 1.5)
+      or (state.last_cue_seek_origin and math.abs(pos - state.last_cue_seek_origin) <= 1.5)
+    )
+
+  if chained then
+    local anchor = state.last_cue_seek_idx
+    candidate_idx = anchor + dir
+    while candidate_idx >= 1 and candidate_idx <= #state.cues
+      and math.abs(state.cues[candidate_idx].startSeconds - state.cues[anchor].startSeconds) <= 0.05 do
+      candidate_idx = candidate_idx + dir
+    end
+    if candidate_idx >= 1 and candidate_idx <= #state.cues then
+      if dir < 0 then
+        gap = math.max(0, state.cues[anchor].startSeconds - state.cues[candidate_idx].endSeconds)
+      else
+        gap = math.max(0, state.cues[candidate_idx].startSeconds - state.cues[anchor].endSeconds)
+      end
+    else
+      candidate_idx = nil
+      gap = math.huge
+    end
+  else
+    local active_idx = nil
+    local last_before_idx = nil
+    local best_before_end = -math.huge
+    local next_after_idx = nil
+
+    for i = 1, #state.cues do
+      local c = state.cues[i]
+      if pos >= c.startSeconds and pos <= c.endSeconds then
+        active_idx = i
+      end
+      if c.startSeconds <= pos and c.endSeconds >= best_before_end then
+        best_before_end = c.endSeconds
+        last_before_idx = i
+      end
+      if not next_after_idx and c.startSeconds > (pos + 0.05) then
+        next_after_idx = i
+      end
+    end
+
+    if dir < 0 then
+      if active_idx then
+        if (pos - state.cues[active_idx].startSeconds) > 0.85 then
+          candidate_idx = active_idx
+          gap = 0
+        else
+          local prev = active_idx - 1
+          while prev >= 1 and (state.cues[active_idx].startSeconds - state.cues[prev].startSeconds) <= 0.05 do
+            prev = prev - 1
+          end
+          candidate_idx = prev >= 1 and prev or nil
+          gap = candidate_idx and math.max(0, pos - state.cues[candidate_idx].endSeconds) or math.huge
+        end
+      else
+        candidate_idx = last_before_idx
+        gap = candidate_idx and math.max(0, pos - state.cues[candidate_idx].endSeconds) or math.huge
+      end
+    else
+      candidate_idx = next_after_idx
+      gap = candidate_idx and math.max(0, state.cues[candidate_idx].startSeconds - pos) or math.huge
+    end
+  end
+
+  if candidate_idx and candidate_idx >= 1 and candidate_idx <= #state.cues and (max_gap <= 0 or gap <= max_gap) then
+    local c = state.cues[candidate_idx]
+    local dur = (c.endSeconds or c.startSeconds) - c.startSeconds
+    local target = (dur > 0.06)
+      and (c.startSeconds + 0.05)
+      or (c.startSeconds + math.max(0, dur * 0.5))
+    target = math.max(0, target)
+    state.last_cue_seek_idx = candidate_idx
+    state.last_cue_seek_wall = now
+    state.last_cue_seek_target = target
+    state.last_cue_seek_origin = pos
+    state.cue_end_paused_idx = nil
+    mp.commandv("no-osd", "seek", tostring(target), "absolute", "exact")
+  else
+    seek_relative_plain(dir * fallback_step)
+  end
 end
 
 local function cycle_ref_mode()
@@ -3142,6 +3279,16 @@ local SESSION_BINDINGS = {
   { "a", "lr-session-cue-pause", toggle_pause_at_cue_end },
 }
 
+local CUE_SEEK_LEFT_BINDINGS = {
+  { "LEFT", "lr-cue-seek-left", function() seek_by_cue(-1) end, { repeatable = true } },
+  { "Shift+LEFT", "lr-plain-seek-left", function() seek_relative_plain(-5) end, { repeatable = true } },
+}
+
+local CUE_SEEK_RIGHT_BINDINGS = {
+  { "RIGHT", "lr-cue-seek-right", function() seek_by_cue(1) end, { repeatable = true } },
+  { "Shift+RIGHT", "lr-plain-seek-right", function() seek_relative_plain(5) end, { repeatable = true } },
+}
+
 local WORD_HOVER_BINDINGS = {
   { "MBTN_LEFT", "lr-whover-click", function() on_mouse_click(false) end },
   { "MBTN_LEFT_DBL", "lr-whover-dblclick", function() on_mouse_click(false) end },
@@ -3195,6 +3342,8 @@ update_keybindings = function()
   local want_session = (not want_modal) and state.active
   local want_popup = want_session and state.popup ~= nil
   local want_word_hover = want_session and (not want_popup) and (state.hover_tok_idx ~= nil)
+  local cue_mode = get_cue_seek_mode()
+  local want_cue_seek = want_session and (not want_popup) and (not state.live_fallback) and (cue_mode ~= "off")
 
   if not want_modal and state.modal_keys_bound then
     detach_bindings(MODAL_BINDINGS)
@@ -3203,6 +3352,14 @@ update_keybindings = function()
   if not want_session and state.session_keys_bound then
     detach_bindings(SESSION_BINDINGS)
     state.session_keys_bound = false
+  end
+  if (not want_cue_seek or state.cue_seek_bound_mode ~= cue_mode) and state.cue_seek_keys_bound then
+    detach_bindings(CUE_SEEK_LEFT_BINDINGS)
+    if state.cue_seek_bound_mode == "both" then
+      detach_bindings(CUE_SEEK_RIGHT_BINDINGS)
+    end
+    state.cue_seek_keys_bound = false
+    state.cue_seek_bound_mode = nil
   end
   if not want_word_hover and state.word_hover_keys_bound then
     detach_bindings(WORD_HOVER_BINDINGS)
@@ -3216,6 +3373,14 @@ update_keybindings = function()
   if want_session and not state.session_keys_bound then
     attach_bindings(SESSION_BINDINGS)
     state.session_keys_bound = true
+  end
+  if want_cue_seek and not state.cue_seek_keys_bound then
+    attach_bindings(CUE_SEEK_LEFT_BINDINGS)
+    if cue_mode == "both" then
+      attach_bindings(CUE_SEEK_RIGHT_BINDINGS)
+    end
+    state.cue_seek_keys_bound = true
+    state.cue_seek_bound_mode = cue_mode
   end
   if want_word_hover and not state.word_hover_keys_bound then
     attach_bindings(WORD_HOVER_BINDINGS)

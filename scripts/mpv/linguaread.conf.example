@@ -51,3 +51,9 @@ sync_interval_seconds=60
 
 # Global listening-time credit multiplier (1.0 = 1:1 wall-clock credit, 0.5 = half credit for video vs audio, 0 = episode passes/position only).
 listening_credit_multiplier=1.0
+
+# Subtitle cue seeking with Left/Right arrow keys during an active session (Shift+Left/Right still seeks ±5s): both | left_only | off
+cue_seek_mode=both
+
+# Max silence gap (seconds) before Left/Right cue seek falls back to a ±5s relative seek (0 = always jump to nearest cue).
+cue_seek_max_gap_seconds=20

@@ -57,3 +57,6 @@ cue_seek_mode=both
 
 # Max silence gap (seconds) before Left/Right cue seek falls back to a ±5s relative seek (0 = always jump to nearest cue).
 cue_seek_max_gap_seconds=20
+
+# Days to cache extracted embedded subtitle tracks on disk so restarts skip ffmpeg (0 = disable cache).
+sub_cache_days=90

@@ -37,6 +37,7 @@ local opts = {
   max_line_width_ratio = 0.84,
   cue_seek_mode = "both",
   cue_seek_max_gap_seconds = 20,
+  sub_cache_days = 90,
 }
 options.read_options(opts, "linguaread")
 
@@ -963,7 +964,247 @@ local function resolve_external_path(ext_path)
   return ext_path
 end
 
-local function run_ffmpeg_ass(args, callback)
+local SUB_CACHE_MAX_FILES = 500
+local SUB_CACHE_MAX_BYTES = 16 * 1024 * 1024
+
+local function get_sub_cache_days()
+  local d = tonumber(opts.sub_cache_days)
+  if d == nil or d ~= d then return 90 end
+  if d <= 0 then return 0 end
+  return d
+end
+
+local function hash_cache_key(s)
+  local h1, h2 = 2166136261, 5381
+  local m1, m2 = 4294967291, 4294967279
+  for i = 1, #s do
+    local b = string.byte(s, i)
+    h1 = (h1 * 131 + b) % m1
+    h2 = (h2 * 65599 + b) % m2
+  end
+  return string.format("%08x%08x", h1, h2)
+end
+
+local function sanitize_cache_key(s)
+  return (tostring(s or ""):gsub("[\r\n]+", " "))
+end
+
+local function ensure_dir_exists(dir)
+  if type(dir) ~= "string" or dir == "" then return false end
+  local info = utils.file_info(dir)
+  if info then return info.is_dir == true end
+  if is_windows then
+    if dir:find('[&|^<>%%!"()]', 1) then return false end
+    mp.command_native({
+      name = "subprocess",
+      args = { "cmd.exe", "/d", "/e:on", "/c", "mkdir", dir },
+      capture_stdout = true,
+      capture_stderr = true,
+      playback_only = false,
+    })
+  else
+    mp.command_native({
+      name = "subprocess",
+      args = { "mkdir", "-p", dir },
+      capture_stdout = true,
+      capture_stderr = true,
+      playback_only = false,
+    })
+  end
+  local after = utils.file_info(dir)
+  return after ~= nil and after.is_dir == true
+end
+
+local function prune_sub_cache_once(cache_dir, ttl_days)
+  if sub._cache_pruned or not cache_dir or ttl_days <= 0 then return end
+  sub._cache_pruned = true
+  local entries = utils.readdir(cache_dir, "files")
+  if type(entries) ~= "table" then return end
+
+  local now = os.time()
+  local ttl_sec = ttl_days * 86400
+  local kept = {}
+
+  for i = 1, #entries do
+    local name = entries[i]
+    local full_path = utils.join_path(cache_dir, name)
+    if name:match("^sub%-[0-9a-f]+%.ass%.tmp%.%d+%.%d+$") then
+      local info = utils.file_info(full_path)
+      if not info or not info.mtime or (now - info.mtime) > 3600 then
+        os.remove(full_path)
+      end
+    elseif name:match("^sub%-[0-9a-f]+%.ass$") then
+      local info = utils.file_info(full_path)
+      if info and info.mtime and (now - info.mtime) > ttl_sec then
+        os.remove(full_path)
+      else
+        kept[#kept + 1] = { path = full_path, mtime = (info and info.mtime) or now }
+      end
+    end
+  end
+
+  if #kept > SUB_CACHE_MAX_FILES then
+    table.sort(kept, function(a, b) return a.mtime < b.mtime end)
+    for i = 1, (#kept - SUB_CACHE_MAX_FILES) do
+      os.remove(kept[i].path)
+    end
+  end
+end
+
+local function resolve_sub_cache_dir(ttl_days)
+  if sub._cache_dir then return sub._cache_dir end
+
+  local candidates = {}
+  local mpv_dir = trim(mp.command_native({"expand-path", "~~/"}) or "")
+  if mpv_dir ~= "" then
+    candidates[#candidates + 1] = utils.join_path(mpv_dir, "linguaread-sub-cache")
+  end
+  if is_windows then
+    local local_app = trim(os.getenv("LOCALAPPDATA") or "")
+    if local_app ~= "" then
+      candidates[#candidates + 1] = utils.join_path(local_app, "linguaread-mpv-cache")
+    end
+    local env_temp = trim(os.getenv("TEMP") or "")
+    if env_temp ~= "" then
+      candidates[#candidates + 1] = utils.join_path(env_temp, "linguaread-sub-cache")
+    end
+    local env_tmp = trim(os.getenv("TMP") or "")
+    if env_tmp ~= "" and env_tmp ~= env_temp then
+      candidates[#candidates + 1] = utils.join_path(env_tmp, "linguaread-sub-cache")
+    end
+    local sys_root = trim(os.getenv("SystemRoot") or "")
+    if sys_root ~= "" then
+      candidates[#candidates + 1] = utils.join_path(utils.join_path(sys_root, "Temp"), "linguaread-sub-cache")
+    end
+  else
+    local xdg = trim(os.getenv("XDG_CACHE_HOME") or "")
+    if xdg ~= "" then
+      candidates[#candidates + 1] = utils.join_path(xdg, "linguaread-mpv")
+    else
+      local home = trim(os.getenv("HOME") or "")
+      if home ~= "" then
+        candidates[#candidates + 1] = utils.join_path(utils.join_path(home, ".cache"), "linguaread-mpv")
+      end
+    end
+    local env_temp = trim(os.getenv("TMPDIR") or "")
+    if env_temp == "" then env_temp = "/tmp" end
+    candidates[#candidates + 1] = utils.join_path(env_temp, "linguaread-sub-cache")
+  end
+
+  for i = 1, #candidates do
+    local dir = candidates[i]
+    if ensure_dir_exists(dir) then
+      local probe = utils.join_path(dir, ".lr-probe-" .. tostring(os.time()))
+      local pf = io.open(probe, "wb")
+      if pf then
+        local ok_w = pf:write("ok")
+        local ok_c = pf:close()
+        os.remove(probe)
+        if ok_w and ok_c ~= false then
+          sub._cache_dir = dir
+          prune_sub_cache_once(dir, ttl_days)
+          return dir
+        end
+      end
+    end
+  end
+
+  return nil
+end
+
+local function build_embedded_cache_key(media_path, track)
+  local resolved = resolve_external_path(media_path)
+  local finfo = (not resolved:match("^https?://")) and utils.file_info(resolved) or nil
+  local raw_size = mp.get_property_native("file-size") or (finfo and finfo.size)
+  local size_str = (type(raw_size) == "number" and raw_size >= 0) and string.format("%.0f", raw_size) or ""
+  local mtime_str = (finfo and type(finfo.mtime) == "number") and string.format("%.0f", finfo.mtime) or ""
+  if size_str == "" and mtime_str == "" then return nil end
+
+  return sanitize_cache_key(table.concat({
+    resolved,
+    size_str,
+    mtime_str,
+    tostring(track["ff-index"]),
+    tostring(track.codec or ""),
+    tostring(track.lang or ""),
+    tostring(track.title or ""),
+  }, "|"))
+end
+
+local function read_sub_cache(cache_key, ttl_days)
+  if not cache_key or ttl_days <= 0 then return nil end
+  local dir = resolve_sub_cache_dir(ttl_days)
+  if not dir then return nil end
+
+  local cache_path = utils.join_path(dir, "sub-" .. hash_cache_key(cache_key) .. ".ass")
+  local f = io.open(cache_path, "rb")
+  if not f then return nil end
+  local raw = f:read("*a")
+  f:close()
+
+  if type(raw) ~= "string" or raw == "" then
+    os.remove(cache_path)
+    return nil
+  end
+
+  local nl = raw:find("\n", 1, true)
+  if not nl then
+    os.remove(cache_path)
+    return nil
+  end
+
+  local header = raw:sub(1, nl - 1):gsub("\r$", "")
+  local cached_at_str, stored_key = header:match("^;LR_CACHE_V1|(%d+)|(.*)$")
+  local cached_at = tonumber(cached_at_str)
+  if not cached_at or not stored_key then
+    os.remove(cache_path)
+    return nil
+  end
+  if stored_key ~= cache_key then
+    return nil
+  end
+  if (os.time() - cached_at) > (ttl_days * 86400) then
+    os.remove(cache_path)
+    return nil
+  end
+
+  local body = raw:sub(nl + 1)
+  local cues = sub.parse_ass(body)
+  if #cues == 0 then
+    os.remove(cache_path)
+    return nil
+  end
+  return cues
+end
+
+local function write_sub_cache(cache_key, ass_text, ttl_days)
+  if not cache_key or ttl_days <= 0 or type(ass_text) ~= "string" or ass_text == "" or #ass_text > SUB_CACHE_MAX_BYTES then
+    return
+  end
+  local dir = resolve_sub_cache_dir(ttl_days)
+  if not dir then return end
+
+  local cache_path = utils.join_path(dir, "sub-" .. hash_cache_key(cache_key) .. ".ass")
+  sub._tmp_seq = (sub._tmp_seq or 0) + 1
+  local tmp_path = cache_path .. ".tmp." .. tostring(os.time()) .. "." .. tostring(sub._tmp_seq)
+  local f = io.open(tmp_path, "wb")
+  if not f then return end
+
+  local payload = ";LR_CACHE_V1|" .. tostring(os.time()) .. "|" .. cache_key .. "\n" .. ass_text
+  local ok_w = f:write(payload)
+  local ok_c = f:close()
+  if ok_w and ok_c ~= false then
+    os.remove(cache_path)
+    local ok_r = os.rename(tmp_path, cache_path)
+    if not ok_r then
+      os.remove(tmp_path)
+    end
+  else
+    os.remove(tmp_path)
+  end
+end
+
+local function run_ffmpeg_ass(args, callback, cache_key, ttl_days)
   mp.command_native_async({
     name = "subprocess",
     args = args,
@@ -973,22 +1214,25 @@ local function run_ffmpeg_ass(args, callback)
   }, function(success, result, error_str)
     if not success or not result or result.status ~= 0 then
       local err = (result and trim(result.stderr or "")) or error_str or "ffmpeg subtitle extraction failed"
-      callback(false, {}, err)
+      callback(false, {}, err, false)
       return
     end
     local stdout = result.stdout or ""
     local cues = sub.parse_ass(stdout)
     if #cues == 0 then
-      callback(false, {}, "Extracted subtitle stream contained no dialogue cues.")
+      callback(false, {}, "Extracted subtitle stream contained no dialogue cues.", false)
       return
     end
-    callback(true, cues, nil)
+    if cache_key then
+      write_sub_cache(cache_key, stdout, ttl_days)
+    end
+    callback(true, cues, nil, false)
   end)
 end
 
 function sub.extract_track(track, callback)
   if not track then
-    callback(false, {}, "No subtitle track selected.")
+    callback(false, {}, "No subtitle track selected.", false)
     return
   end
 
@@ -1003,7 +1247,7 @@ function sub.extract_track(track, callback)
           local ext = resolved:match("%.([^./\\]+)$")
           local cues = sub.parse_auto(data, ext and ext:lower() or nil)
           if #cues > 0 then
-            callback(true, cues, nil)
+            callback(true, cues, nil, false)
             return
           end
         end
@@ -1019,20 +1263,31 @@ function sub.extract_track(track, callback)
 
   local ff_index = track["ff-index"]
   if ff_index == nil then
-    callback(false, {}, "Embedded subtitle track has no ff-index.")
+    callback(false, {}, "Embedded subtitle track has no ff-index.", false)
     return
   end
 
   local media_path = mp.get_property("path") or ""
   if media_path == "" then
-    callback(false, {}, "No active media path.")
+    callback(false, {}, "No active media path.", false)
     return
+  end
+
+  local ttl_days = get_sub_cache_days()
+  local cache_key = (ttl_days > 0) and build_embedded_cache_key(media_path, track) or nil
+  if cache_key then
+    local cached_cues = read_sub_cache(cache_key, ttl_days)
+    if cached_cues then
+      msg.verbose("Loaded subtitle track from local cache (" .. tostring(#cached_cues) .. " cues)")
+      callback(true, cached_cues, nil, true)
+      return
+    end
   end
 
   run_ffmpeg_ass({
     resolve_ffmpeg_path(), "-v", "error", "-i", media_path,
     "-map", "0:" .. tostring(ff_index), "-f", "ass", "-",
-  }, callback)
+  }, callback, cache_key, ttl_days)
 end
 
 ---------------------------------------------------------------------------
@@ -1967,7 +2222,7 @@ local function start_or_resync_session(draft)
     media_title = trim(mp.get_property("filename/no-ext") or "Untitled mpv Session")
   end
 
-  sub.extract_track(study_track, function(ext_ok, extracted_cues, ext_err)
+  sub.extract_track(study_track, function(ext_ok, extracted_cues, ext_err, from_cache)
     if sync_id ~= state.sync_seq then
       return
     end
@@ -2003,7 +2258,10 @@ local function start_or_resync_session(draft)
       return
     end
 
-    state.menu_status = string.format("Syncing %d cues to LinguaRead...", #extracted_cues)
+    state.menu_status = string.format(
+      from_cache and "Syncing %d cached cues to LinguaRead..." or "Syncing %d cues to LinguaRead...",
+      #extracted_cues
+    )
     render_all()
 
     local payload_cues = {}

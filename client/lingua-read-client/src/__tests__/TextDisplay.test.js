@@ -4462,4 +4462,41 @@ describe('TextDisplay', () => {
       expect(screen.queryByText('Audio Player')).not.toBeInTheDocument();
     });
   });
+
+  test('single-word click forwards sentence context to word provider without calling AI', async () => {
+    translateText.mockResolvedValueOnce({ translatedText: 'Hola' });
+    getText.mockResolvedValueOnce({
+      textId: 1,
+      title: 'Sample Text',
+      content: 'Hello world. Another sentence!',
+      languageId: null,
+      languageCode: 'ES',
+      languageName: 'Spanish',
+      isAudioLesson: false,
+      words: [],
+      bookId: null
+    });
+
+    renderTextDisplay({ autoTranslateWords: true });
+
+    await waitFor(() => expect(getText).toHaveBeenCalled());
+    const word = await screen.findByText('Hello');
+
+    await act(async () => {
+      fireEvent.click(word);
+    });
+
+    await waitFor(() => {
+      expect(translateText).toHaveBeenCalledWith(
+        'Hello',
+        'ES',
+        'EN',
+        expect.objectContaining({
+          signal: expect.anything(),
+          sentenceContext: 'Hello world.'
+        })
+      );
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+  });
 });

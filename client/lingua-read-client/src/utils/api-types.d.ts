@@ -7814,6 +7814,7 @@ export interface components {
             text?: string | null;
             sourceLanguageCode?: string | null;
             targetLanguageCode?: string | null;
+            sentenceContext?: string | null;
         };
         TranslationResponse: {
             originalText?: string | null;

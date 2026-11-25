@@ -72,10 +72,19 @@ namespace LinguaReadApi.Controllers
             try
             {
                 var translationService = await _translationServiceFactory.GetServiceForUserAsync(GetUserId());
-                var translatedText = await translationService.TranslateTextAsync(
-                    request.Text,
-                    request.SourceLanguageCode,
-                    request.TargetLanguageCode);
+                var sentenceContext = string.IsNullOrWhiteSpace(request.SentenceContext)
+                    ? null
+                    : request.SentenceContext.Trim();
+                var translatedText = sentenceContext != null
+                    ? await translationService.TranslateTextAsync(
+                        request.Text,
+                        request.SourceLanguageCode,
+                        request.TargetLanguageCode,
+                        sentenceContext)
+                    : await translationService.TranslateTextAsync(
+                        request.Text,
+                        request.SourceLanguageCode,
+                        request.TargetLanguageCode);
 
                 return Ok(new TranslationResponse
                 {
@@ -228,6 +237,9 @@ namespace LinguaReadApi.Controllers
 
         [JsonPropertyName("targetLanguageCode")]
         public string TargetLanguageCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("sentenceContext")]
+        public string? SentenceContext { get; set; }
     }
 
     public class TranslationResponse

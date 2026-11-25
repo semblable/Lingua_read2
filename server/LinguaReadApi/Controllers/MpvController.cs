@@ -680,7 +680,9 @@ namespace LinguaReadApi.Controllers
                 try
                 {
                     var wordService = await _wordTranslationServiceFactory.GetServiceForUserAsync(userId);
-                    translation = (await wordService.TranslateTextAsync(trimmedTerm, language.Code, targetCode) ?? string.Empty).Trim();
+                    translation = (await (sentenceContext != null
+                        ? wordService.TranslateTextAsync(trimmedTerm, language.Code, targetCode, sentenceContext)
+                        : wordService.TranslateTextAsync(trimmedTerm, language.Code, targetCode)) ?? string.Empty).Trim();
                     provider = wordProviderName;
                 }
                 catch (TranslationProviderNotConfiguredException ex)

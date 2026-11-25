@@ -179,4 +179,76 @@ describe('useWordTranslation', () => {
     });
     expect(observedSignal?.aborted).toBe(true);
   });
+
+  test('word mode with sentenceContext calls translateText (not AI) and caches per sentence for DeepL', async () => {
+    translateText
+      .mockResolvedValueOnce({ translatedText: 'bank' })
+      .mockResolvedValueOnce({ translatedText: 'bench' });
+    const { result } = renderTranslationHook();
+
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', { sentenceContext: 'Voy al banco.', mode: 'word' });
+    });
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+    expect(translateText).toHaveBeenCalledWith(
+      'banco',
+      'es',
+      'EN',
+      expect.objectContaining({ signal: expect.any(Object), sentenceContext: 'Voy al banco.' })
+    );
+    expect(result.current.translation).toBe('bank');
+
+    // Same term + same sentence hits cache.
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', { sentenceContext: 'Voy al banco.', mode: 'word' });
+    });
+    expect(translateText).toHaveBeenCalledTimes(1);
+
+    // Same term in a different sentence re-queries DeepL with the new sentence context.
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', { sentenceContext: 'Me siento en el banco.', mode: 'word' });
+    });
+    expect(translateText).toHaveBeenCalledTimes(2);
+    expect(translateText).toHaveBeenLastCalledWith(
+      'banco',
+      'es',
+      'EN',
+      expect.objectContaining({ signal: expect.any(Object), sentenceContext: 'Me siento en el banco.' })
+    );
+    expect(result.current.translation).toBe('bench');
+  });
+
+  test('wiktionary shares cache across sentences on word clicks while explicit AI Translate uses AI', async () => {
+    translateText.mockResolvedValue({ translatedText: 'bank; bench' });
+    translateSelectionWithContext.mockResolvedValue({ translatedText: 'bench (AI)' });
+    const { result } = renderTranslationHook({
+      globalSettings: { wordTranslationProvider: 'wiktionary' }
+    });
+
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', { sentenceContext: 'Voy al banco.', mode: 'word' });
+    });
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', { sentenceContext: 'Me siento en el banco.', mode: 'word' });
+    });
+    expect(translateText).toHaveBeenCalledTimes(1);
+    expect(translateSelectionWithContext).not.toHaveBeenCalled();
+
+    // Explicit AI Translate (mode: 'ai', force: true) must still invoke AI even when Wiktionary is active.
+    await act(async () => {
+      await result.current.triggerAutoTranslation('banco', {
+        sentenceContext: 'Me siento en el banco.',
+        force: true,
+        mode: 'ai'
+      });
+    });
+    expect(translateSelectionWithContext).toHaveBeenCalledWith(
+      'banco',
+      'Me siento en el banco.',
+      'es',
+      'EN',
+      expect.objectContaining({ signal: expect.any(Object) })
+    );
+    expect(result.current.translation).toBe('bench (AI)');
+  });
 });

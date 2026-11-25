@@ -693,6 +693,7 @@ public class MpvControllerTests
         Assert.Equal("deepl", wordJson.GetProperty("provider").GetString());
         Assert.Equal(JsonValueKind.Null, wordJson.GetProperty("sentenceTranslation").ValueKind);
         Assert.Equal(0, fakeAiService.CallCount);
+        Assert.Equal(("voler", "fr", "EN", "L'oiseau va voler."), Assert.Single(fakeWordService.TextCalls));
 
         // 2. Context mode uses AI when valid; includeSentenceTranslation strips paired tags
         fakeAiService.SelectionHandler = (sel, ctx, src, tgt) => "to fly (in context)";
@@ -745,6 +746,18 @@ public class MpvControllerTests
         Assert.Equal("maison:fr->EN:word", unconfJson.GetProperty("translation").GetString());
         Assert.Equal("deepl", unconfJson.GetProperty("provider").GetString());
         Assert.Equal("Une grande maison.:fr->EN:word", unconfJson.GetProperty("sentenceTranslation").GetString());
+
+        // Word-lookup fallbacks carry sentence context, while full-sentence fallbacks omit context.
+        Assert.Equal(
+            new[]
+            {
+                ("voler", (string?)"fr", "EN", (string?)"L'oiseau va voler."),
+                ("voler", (string?)"fr", "EN", (string?)"L'oiseau va voler."),
+                ("L'oiseau va voler.", (string?)"fr", "EN", (string?)null),
+                ("maison", (string?)"fr", "EN", (string?)"Une grande maison."),
+                ("Une grande maison.", (string?)"fr", "EN", (string?)null),
+            },
+            fakeWordService.TextCalls);
     }
 
     private static async Task<string> SetupAndGetCookieAsync(HttpClient client)
@@ -870,11 +883,16 @@ public class MpvControllerTests
     private sealed class FakeWordTranslationService : ITranslationService
     {
         public List<(List<string> Words, string Target, string? Source)> BatchCalls { get; } = new();
+        public List<(string Text, string? Source, string Target, string? Context)> TextCalls { get; } = new();
         public Func<string, string?, string, string>? TextHandler { get; set; }
         public Func<List<string>, string, string?, Dictionary<string, string>>? BatchHandler { get; set; }
 
-        public Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang)
+        public Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang) =>
+            TranslateTextAsync(text, sourceLang, targetLang, context: null);
+
+        public Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang, string? context)
         {
+            TextCalls.Add((text, sourceLang, targetLang, context));
             return Task.FromResult(TextHandler?.Invoke(text, sourceLang, targetLang) ?? string.Empty);
         }
 

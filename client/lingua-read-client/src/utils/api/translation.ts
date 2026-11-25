@@ -18,17 +18,28 @@ export type SummarizationResponse = ResponseOf<'/api/Summarization', 'post'>;
 export type SupportedLanguages = ResponseOf<'/api/Translation/languages', 'get'>;
 
 export type AbortSignalOptions = { signal?: AbortSignal };
+export type TranslateTextOptions = AbortSignalOptions & { sentenceContext?: string };
 
 export const translateText = async (
   text: string,
   sourceLanguageCode: string,
   targetLanguageCode: string,
-  { signal }: AbortSignalOptions = {}
+  { signal, sentenceContext }: TranslateTextOptions = {}
 ): Promise<TranslationResponse> => {
   try {
+    const trimmedContext = sentenceContext?.trim();
+    const payload: {
+      text: string;
+      sourceLanguageCode: string;
+      targetLanguageCode: string;
+      sentenceContext?: string;
+    } = { text, sourceLanguageCode, targetLanguageCode };
+    if (trimmedContext) {
+      payload.sentenceContext = trimmedContext;
+    }
     return await fetchApi<TranslationResponse>('/translation', {
       method: 'POST',
-      body: JSON.stringify({ text, sourceLanguageCode, targetLanguageCode }),
+      body: JSON.stringify(payload),
       signal
     });
   } catch (error) {

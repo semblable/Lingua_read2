@@ -913,7 +913,7 @@ const TextDisplay = () => {
         translation: existingWord.translation ?? undefined
       });
       setTranslation(existingWord.translation || '');
-      if (!existingWord.translation && !skipAutoTranslate) triggerAutoTranslation(existingWord.term || lemma);
+      if (!existingWord.translation && !skipAutoTranslate) triggerAutoTranslation(existingWord.term || lemma, { sentenceContext: selectionContext, mode: 'word' });
     } else {
       const newWord = {
         term: lemma,
@@ -926,7 +926,7 @@ const TextDisplay = () => {
       };
       setDisplayedWord(newWord);
       setTranslation('');
-      if (!skipAutoTranslate) triggerAutoTranslation(lemma);
+      if (!skipAutoTranslate) triggerAutoTranslation(lemma, { sentenceContext: selectionContext, mode: 'word' });
     }
   }, [clearPendingSelection, cancelInflightTranslation, getWordData, koreanWordLookup, globalSettings.pauseOnWordClick, isAudioLesson, triggerAutoTranslation, setSelectedWord, setTranslation, setWordTranslationError, setDisplayedWord, isMobile, pauseAudioPlayback, setSegmentPlaybackRequest, languageConfig?.code, languageConfig?.languageCode, text?.languageCode, lookupGeneration]); // Dependencies using globalSettings don't need it listed if context handles updates
 
@@ -983,7 +983,7 @@ const TextDisplay = () => {
       const useAiContext = Boolean(sentenceContext && sentenceContext.trim());
       handleWordClick(selectedText, { skipAutoTranslate: useAiContext, preserveLastHandledSelection: true, selectionContext: sentenceContext });
       if (useAiContext) {
-        triggerAutoTranslation(selectedText, { sentenceContext });
+        triggerAutoTranslation(selectedText, { sentenceContext, mode: 'ai' });
       }
     }, 0);
   }, [handleWordClick, triggerAutoTranslation]);
@@ -2057,7 +2057,12 @@ const TextDisplay = () => {
       void mutateWordStatus({
         target: { textId: text.textId, term: targetTerm, word: wordData, sentence: sentenceToMine }, status,
         fillTranslation: !wordData?.translation && sourceLanguage ? async () => {
-          const result = await translateText(targetTerm, sourceLanguage, translationTargetLanguageCode);
+          const result = await translateText(
+            targetTerm,
+            sourceLanguage,
+            translationTargetLanguageCode,
+            sentenceToMine ? { sentenceContext: sentenceToMine } : undefined
+          );
           return result?.translatedText || undefined;
         } : undefined,
       });
@@ -2237,7 +2242,7 @@ const TextDisplay = () => {
       selectionContext: effectiveContext
     });
     if (useAiContext) {
-      triggerAutoTranslation(nextText, { sentenceContext: effectiveContext });
+      triggerAutoTranslation(nextText, { sentenceContext: effectiveContext, mode: 'ai' });
     }
   }, [
     activePhraseSelection,
@@ -2277,6 +2282,7 @@ const TextDisplay = () => {
     triggerAutoTranslation(displayedWord.term, {
       sentenceContext: wordInfoRetranslateContext,
       force: true,
+      mode: 'ai',
     });
   }, [displayedWord?.term, triggerAutoTranslation, wordInfoRetranslateContext]);
 

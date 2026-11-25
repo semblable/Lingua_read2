@@ -23,7 +23,7 @@ export type UseWordTranslationResult = {
   setWordTranslationError: React.Dispatch<React.SetStateAction<string>>;
   triggerAutoTranslation: (
     term: string,
-    options?: { sentenceContext?: string; force?: boolean }
+    options?: { sentenceContext?: string; force?: boolean; mode?: 'word' | 'ai' }
   ) => Promise<void>;
   // Resolves to the box text after the append, or null when nothing changed.
   appendAutoTranslation: (
@@ -68,18 +68,21 @@ export const useWordTranslation = ({
   const triggerAutoTranslation = useCallback(
     async (
       termToTranslate: string,
-      options: { sentenceContext?: string; force?: boolean } = {}
+      options: { sentenceContext?: string; force?: boolean; mode?: 'word' | 'ai' } = {}
     ) => {
-      const { sentenceContext = '', force = false } = options;
+      const { sentenceContext = '', force = false, mode = 'word' } = options;
       if (!termToTranslate || !text?.languageCode) return;
       if (!force && !globalSettings.autoTranslateWords) return;
 
-      // Wiktionary is a per-word dictionary; it ignores sentence context, so route the
-      // click to the word-lookup endpoint (which the backend factory maps to Wiktionary)
-      // rather than the context-aware AI selection endpoint.
-      const useWiktionary = globalSettings.wordTranslationProvider === 'wiktionary';
-      const useContext = !!sentenceContext && !useWiktionary;
-      const cacheKey = `${text.languageCode}|${targetLanguageCode}|${useContext ? 'sel' : 'word'}|${useContext ? sentenceContext : ''}|${termToTranslate}`;
+      const trimmedContext = sentenceContext.trim();
+      const provider = (globalSettings.wordTranslationProvider || 'deepl').trim().toLowerCase();
+      const useWiktionary = provider === 'wiktionary';
+      // Single-word clicks (mode: 'word') stay on the word provider (which uses unbilled
+      // context on DeepL) rather than invoking AI by default; drag selections and explicit
+      // AI Translate actions pass mode: 'ai'.
+      const useAiSelection = mode === 'ai' && !!trimmedContext && (force || !useWiktionary);
+      const cacheContext = useAiSelection || provider === 'deepl' ? trimmedContext : '';
+      const cacheKey = `${text.languageCode}|${targetLanguageCode}|${useAiSelection ? 'sel' : `word:${provider}`}|${cacheContext}|${termToTranslate}`;
       const cached = translationCacheRef.current.get(cacheKey);
       if (!force && cached) {
         translationCacheRef.current.delete(cacheKey);
@@ -98,9 +101,16 @@ export const useWordTranslation = ({
       setIsTranslating(true);
       setWordTranslationError('');
       try {
-        const result = useContext
-          ? await translateSelectionWithContext(termToTranslate, sentenceContext, text.languageCode, targetLanguageCode, { signal: controller.signal })
-          : await translateText(termToTranslate, text.languageCode, targetLanguageCode, { signal: controller.signal });
+        const result = useAiSelection
+          ? await translateSelectionWithContext(termToTranslate, trimmedContext, text.languageCode, targetLanguageCode, { signal: controller.signal })
+          : await translateText(
+              termToTranslate,
+              text.languageCode,
+              targetLanguageCode,
+              trimmedContext
+                ? { signal: controller.signal, sentenceContext: trimmedContext }
+                : { signal: controller.signal }
+            );
         if (controller.signal.aborted) return;
         if (result?.translatedText) {
           const cache = translationCacheRef.current;

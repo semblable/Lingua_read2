@@ -107,6 +107,54 @@ public class TranslationControllerTests
         Assert.Equal("bonjour", response.TranslatedText);
     }
 
+    [Fact]
+    public async Task TranslateText_WithSentenceContext_ForwardsTrimmedContext()
+    {
+        var service = new Mock<ITranslationService>();
+        service.Setup(s => s.TranslateTextAsync("voler", "FR", "EN", "L'oiseau va voler."))
+            .ReturnsAsync("to fly");
+
+        var controller = CreateController(service.Object, Guid.NewGuid());
+
+        var result = await controller.TranslateText(new TranslationRequest
+        {
+            Text = "voler",
+            SourceLanguageCode = "FR",
+            TargetLanguageCode = "EN",
+            SentenceContext = "  L'oiseau va voler.  "
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<TranslationResponse>(ok.Value);
+        Assert.Equal("to fly", response.TranslatedText);
+        service.Verify(s => s.TranslateTextAsync("voler", "FR", "EN", "L'oiseau va voler."), Times.Once);
+        service.Verify(s => s.TranslateTextAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task TranslateText_WithWhitespaceSentenceContext_UsesContextFreeOverload()
+    {
+        var service = new Mock<ITranslationService>();
+        service.Setup(s => s.TranslateTextAsync("voler", "FR", "EN"))
+            .ReturnsAsync("to steal");
+
+        var controller = CreateController(service.Object, Guid.NewGuid());
+
+        var result = await controller.TranslateText(new TranslationRequest
+        {
+            Text = "voler",
+            SourceLanguageCode = "FR",
+            TargetLanguageCode = "EN",
+            SentenceContext = "   "
+        });
+
+        var ok = Assert.IsType<OkObjectResult>(result.Result);
+        var response = Assert.IsType<TranslationResponse>(ok.Value);
+        Assert.Equal("to steal", response.TranslatedText);
+        service.Verify(s => s.TranslateTextAsync("voler", "FR", "EN"), Times.Once);
+        service.Verify(s => s.TranslateTextAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+    }
+
     private static TranslationController CreateController(ITranslationService service, Guid? userId)
     {
         var factory = new Mock<IWordTranslationServiceFactory>();

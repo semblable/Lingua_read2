@@ -370,6 +370,76 @@ public class DeepLTranslationServiceTests
         Assert.Equal("pt", request.SourceLang);
     }
 
+    [Fact]
+    public async Task TranslateText_WithContext_SendsContextInFormData_IncludingAcrossRetries()
+    {
+        var handler = new ScriptedHandler(Status(HttpStatusCode.ServiceUnavailable), Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateTextAsync("banco", sourceLang: "es", targetLang: "EN", context: "  El banco está en el parque.  ");
+
+        Assert.Equal("T:banco", result);
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.All(handler.Requests, req =>
+        {
+            Assert.Equal(new[] { "banco" }, req.Texts);
+            Assert.Equal("es", req.SourceLang);
+            Assert.Equal("EN", req.TargetLang);
+            Assert.Equal("El banco está en el parque.", req.Context);
+        });
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("Hola")]
+    [InlineData("  hola  ")]
+    public async Task TranslateText_WithBlankOrIdenticalContext_OmitsContextParameter(string? context)
+    {
+        var handler = new ScriptedHandler(Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateTextAsync("hola", sourceLang: "es", targetLang: "EN", context: context);
+
+        Assert.Equal("T:hola", result);
+        var request = Assert.Single(handler.Requests);
+        Assert.Null(request.Context);
+    }
+
+    [Fact]
+    public async Task TranslateText_WithOverlongContext_TruncatesAroundTermWithoutSplittingSurrogates()
+    {
+        // Put the target term past index 2000 and surround with emoji surrogate pairs near slice edges.
+        var prefix = string.Concat(Enumerable.Repeat("a😀", 1100)); // 3300 UTF-16 chars
+        var suffix = string.Concat(Enumerable.Repeat("😀b", 1100)); // 3300 UTF-16 chars
+        var context = $"{prefix} banco {suffix}";
+        var handler = new ScriptedHandler(Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateTextAsync("banco", sourceLang: "es", targetLang: "EN", context: context);
+
+        Assert.Equal("T:banco", result);
+        var sentContext = Assert.Single(handler.Requests).Context;
+        Assert.NotNull(sentContext);
+        Assert.InRange(sentContext!.Length, 1, 2000);
+        Assert.Contains("banco", sentContext);
+        Assert.All(sentContext.EnumerateRunes(), rune => Assert.NotEqual(System.Text.Rune.ReplacementChar, rune));
+    }
+
+    [Fact]
+    public async Task TranslateBatch_NeverSendsContextParameter()
+    {
+        var handler = new ScriptedHandler(Echo());
+        var service = CreateFastService(handler);
+
+        var result = await service.TranslateBatchAsync(new List<string> { "uno", "dos" }, "EN", sourceLang: "es");
+
+        Assert.Equal(2, result.Count);
+        var request = Assert.Single(handler.Requests);
+        Assert.Null(request.Context);
+    }
+
     private static DeepLTranslationService CreateFastService(HttpMessageHandler handler, ILanguageService? languageService = null)
     {
         var service = CreateService(new HttpClient(handler, disposeHandler: false), "test-key", languageService);
@@ -405,7 +475,7 @@ public class DeepLTranslationServiceTests
                 Uri.UnescapeDataString(kv.Length > 1 ? kv[1].Replace('+', ' ') : "")))
             .ToList();
 
-    private sealed record SentRequest(string? Authorization, List<string> Texts, string? TargetLang, string? SourceLang);
+    private sealed record SentRequest(string? Authorization, List<string> Texts, string? TargetLang, string? SourceLang, string? Context);
 
     private sealed class ScriptedHandler(params Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>[] script) : HttpMessageHandler
     {
@@ -418,7 +488,8 @@ public class DeepLTranslationServiceTests
                 request.Headers.TryGetValues("Authorization", out var values) ? string.Join(",", values) : null,
                 form.Where(p => p.Key == "text").Select(p => p.Value).ToList(),
                 form.FirstOrDefault(p => p.Key == "target_lang").Value,
-                form.FirstOrDefault(p => p.Key == "source_lang").Value));
+                form.FirstOrDefault(p => p.Key == "source_lang").Value,
+                form.FirstOrDefault(p => p.Key == "context").Value));
             var step = script[Requests.Count - 1];
             return await step(request, cancellationToken);
         }

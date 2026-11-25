@@ -17,6 +17,8 @@ namespace LinguaReadApi.Services
     public interface ITranslationService
     {
         Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang); // Mark sourceLang as nullable
+        Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang, string? context)
+            => TranslateTextAsync(text, sourceLang, targetLang);
         Task<Dictionary<string, string>> TranslateBatchAsync(List<string> words, string targetLang, string? sourceLang = null); // Mark sourceLang as nullable
     }
 
@@ -30,6 +32,7 @@ namespace LinguaReadApi.Services
         private readonly string _apiUrl;
 
         private const int MaxTextsPerRequest = 50;
+        private const int MaxContextChars = 2000;
         private const int MaxAttempts = 3;
         private static readonly TimeSpan MaxRetryAfter = TimeSpan.FromSeconds(5);
 
@@ -62,7 +65,10 @@ namespace LinguaReadApi.Services
             // stays correct under any HttpClient lifetime (transient, typed, or singleton).
         }
 
-        public async Task<Dictionary<string, string>> TranslateBatchAsync(List<string> words, string targetLang, string? sourceLang = null) // Mark sourceLang as nullable
+        public Task<Dictionary<string, string>> TranslateBatchAsync(List<string> words, string targetLang, string? sourceLang = null) =>
+            TranslateBatchInternalAsync(words, targetLang, sourceLang, context: null);
+
+        private async Task<Dictionary<string, string>> TranslateBatchInternalAsync(List<string> words, string targetLang, string? sourceLang, string? context) // Mark sourceLang as nullable
         {
             var translations = new Dictionary<string, string>();
             // Same input cleanup as the Azure and Google providers: duplicates and blanks only spend
@@ -103,7 +109,7 @@ namespace LinguaReadApi.Services
                 var chunks = distinctWords.Chunk(MaxTextsPerRequest).ToList();
                 for (var i = 0; i < chunks.Count; i++)
                 {
-                    if (!await TranslateChunkAsync(chunks[i], finalDeepLTargetCode, sourceLang, translations))
+                    if (!await TranslateChunkAsync(chunks[i], finalDeepLTargetCode, sourceLang, context, translations))
                     {
                         if (i < chunks.Count - 1)
                         {
@@ -124,11 +130,11 @@ namespace LinguaReadApi.Services
 
         // Returns whether the rest of the batch is worth sending: false when this chunk failed in a way
         // the next one would too.
-        private async Task<bool> TranslateChunkAsync(string[] words, string targetCode, string? sourceLang, Dictionary<string, string> translations)
+        private async Task<bool> TranslateChunkAsync(string[] words, string targetCode, string? sourceLang, string? context, Dictionary<string, string> translations)
         {
             try
             {
-                using var response = await SendWithRetryAsync(() => BuildRequest(words, targetCode, sourceLang));
+                using var response = await SendWithRetryAsync(() => BuildRequest(words, targetCode, sourceLang, context));
                 if (response == null)
                 {
                     return false; // Timed out; already logged.
@@ -176,7 +182,7 @@ namespace LinguaReadApi.Services
             return true;
         }
 
-        private HttpRequestMessage BuildRequest(string[] words, string targetCode, string? sourceLang)
+        private HttpRequestMessage BuildRequest(string[] words, string targetCode, string? sourceLang, string? context = null)
         {
             // DeepL Free API expects form data (application/x-www-form-urlencoded).
             var formData = new List<KeyValuePair<string, string>>();
@@ -190,6 +196,11 @@ namespace LinguaReadApi.Services
             {
                 // Keep sending the original source language code if provided
                 formData.Add(new KeyValuePair<string, string>("source_lang", sourceLang));
+            }
+
+            if (!string.IsNullOrEmpty(context))
+            {
+                formData.Add(new KeyValuePair<string, string>("context", context));
             }
 
             // HttpClient sets the Content-Type header from FormUrlEncodedContent.
@@ -267,29 +278,75 @@ namespace LinguaReadApi.Services
             || (int)status >= 500;
 
         // Implementation for single text translation
-        public async Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang) // Mark sourceLang as nullable
+        public Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang) =>
+            TranslateTextAsync(text, sourceLang, targetLang, context: null);
+
+        public async Task<string> TranslateTextAsync(string text, string? sourceLang, string targetLang, string? context)
         {
-            if (string.IsNullOrEmpty(text))
+            if (string.IsNullOrWhiteSpace(text))
             {
                 return string.Empty;
             }
 
-            // Call batch translation for the single word
-            var batchResult = await TranslateBatchAsync(new List<string> { text }, targetLang, sourceLang);
-    
+            var normalizedContext = NormalizeContext(context, text);
+
+            // Call batch translation helper for the single word
+            var batchResult = await TranslateBatchInternalAsync(new List<string> { text }, targetLang, sourceLang, normalizedContext);
+
             // Since we sent only one word, the result dictionary should contain at most one entry.
             // We rely on DeepL returning translations in the same order as the input.
             // Let's get the first value from the dictionary if it exists.
             var firstTranslation = batchResult.Values.FirstOrDefault();
-    
+
             if (firstTranslation != null)
             {
                 return firstTranslation;
             }
-            
+
             // Log if no translation was found (either API failed or returned empty)
             _logger.LogWarning($"Could not get translation for '{text}' from batch response (Count: {batchResult.Count}).");
             return string.Empty; // Return empty if no translation found
+        }
+
+        private static string? NormalizeContext(string? context, string text)
+        {
+            if (string.IsNullOrWhiteSpace(context))
+            {
+                return null;
+            }
+
+            var trimmed = context.Trim();
+            var trimmedText = text.Trim();
+            if (string.Equals(trimmed, trimmedText, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (trimmed.Length <= MaxContextChars)
+            {
+                return trimmed;
+            }
+
+            var start = 0;
+            var idx = trimmed.IndexOf(trimmedText, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+            {
+                var center = idx + (trimmedText.Length / 2);
+                start = Math.Clamp(center - (MaxContextChars / 2), 0, trimmed.Length - MaxContextChars);
+            }
+
+            var end = start + MaxContextChars;
+            if (start > 0 && char.IsLowSurrogate(trimmed[start]))
+            {
+                start++;
+            }
+            if (end > start && char.IsHighSurrogate(trimmed[end - 1]))
+            {
+                end--;
+            }
+
+            var sliced = trimmed.Substring(start, end - start).Trim();
+            return string.IsNullOrEmpty(sliced) ? null : sliced;
         }
     }
 

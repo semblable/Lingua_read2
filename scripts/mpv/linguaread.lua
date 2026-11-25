@@ -33,6 +33,7 @@ local opts = {
   pause_on_hover = false,
   pause_on_click = "auto",
   sync_interval_seconds = 60,
+  listening_credit_multiplier = 1.0,
   max_line_width_ratio = 0.84,
 }
 options.read_options(opts, "linguaread")
@@ -203,6 +204,7 @@ local state = {
   is_playing = false,
   play_wall_start = nil,
   accumulated_seconds = 0,
+  credit_accumulated_seconds = 0,
   last_progress_pos = nil,
   last_known_pos = nil,
   sync_timer = nil,
@@ -465,7 +467,7 @@ local function curl_quote(s)
     :gsub('\t', '\\t') .. '"'
 end
 
-local function write_windows_curl_config(config_text)
+local function write_windows_curl_config(config_text, playback_only)
   net._req_seq = net._req_seq + 1
   local filename = string.format("linguaread-curl-%d-%d-%d.cfg", os.time(), net._req_seq, math.random(100000, 999999))
 
@@ -476,6 +478,10 @@ local function write_windows_curl_config(config_text)
   if env_tmp ~= "" and env_tmp ~= env_temp then candidates[#candidates + 1] = env_tmp end
   local mpv_dir = trim(mp.command_native({"expand-path", "~~/"}) or "")
   if mpv_dir ~= "" then candidates[#candidates + 1] = mpv_dir end
+  local sys_root = trim(os.getenv("SystemRoot") or "")
+  if sys_root ~= "" then
+    candidates[#candidates + 1] = utils.join_path(sys_root, "Temp")
+  end
 
   for i = 1, #candidates do
     local path = utils.join_path(candidates[i], filename)
@@ -484,7 +490,7 @@ local function write_windows_curl_config(config_text)
       local ok_write = f:write(config_text)
       local ok_close = f:close()
       if ok_write and ok_close ~= false then
-        net._temp_files[path] = true
+        net._temp_files[path] = { playback_only = (playback_only == true) }
         return path, nil
       end
       os.remove(path)
@@ -495,10 +501,15 @@ local function write_windows_curl_config(config_text)
 end
 
 function net.cleanup_temp_files()
-  for path, _ in pairs(net._temp_files) do
-    os.remove(path)
+  local remaining = {}
+  for path, meta in pairs(net._temp_files) do
+    if type(meta) ~= "table" or meta.playback_only then
+      os.remove(path)
+    else
+      remaining[path] = meta
+    end
   end
-  net._temp_files = {}
+  net._temp_files = remaining
 end
 
 function net.request(method, path, body_tbl, options_arg, callback)
@@ -545,7 +556,7 @@ function net.request(method, path, body_tbl, options_arg, callback)
   local cmd
   if is_windows then
     local write_err
-    temp_path, write_err = write_windows_curl_config(config_text)
+    temp_path, write_err = write_windows_curl_config(config_text, playback_only)
     if not temp_path then
       if callback then callback(false, nil, 0, write_err) end
       return
@@ -1151,6 +1162,17 @@ local function show_toast(text, duration)
   render_all()
 end
 
+local function get_listening_credit_multiplier()
+  local m = tonumber(opts.listening_credit_multiplier)
+  if not m or m ~= m or m < 0 then
+    return 1.0
+  end
+  if m > 10 then
+    return 10.0
+  end
+  return m
+end
+
 local function accumulate_listening_now()
   if not state.active or not state.is_playing or not state.play_wall_start then
     return
@@ -1160,7 +1182,9 @@ local function accumulate_listening_now()
   state.play_wall_start = now
   if delta > 0 then
     -- Cap single tick at 1 hour in case system slept
-    state.accumulated_seconds = state.accumulated_seconds + math.min(delta, 3600)
+    local clamped = math.min(delta, 3600)
+    state.accumulated_seconds = state.accumulated_seconds + clamped
+    state.credit_accumulated_seconds = state.credit_accumulated_seconds + (clamped * get_listening_credit_multiplier())
   end
 end
 
@@ -1197,22 +1221,30 @@ local function flush_listening_and_progress(force_progress, sync_mode)
     or { playback_only = false }
 
   accumulate_listening_now()
-  local whole_seconds = math.floor(state.accumulated_seconds)
-  if whole_seconds >= 1 then
-    state.accumulated_seconds = state.accumulated_seconds - whole_seconds
+  local played_seconds = math.floor(state.accumulated_seconds)
+  local credited_seconds = math.floor(state.credit_accumulated_seconds)
+  local dur = get_episode_duration_seconds()
+  local has_lesson = dur and dur > 0 and state.study_revision ~= "" and #state.study_revision == 64
+
+  if credited_seconds >= 1 or (has_lesson and played_seconds >= 1) then
+    if credited_seconds >= 1 then
+      state.credit_accumulated_seconds = state.credit_accumulated_seconds - credited_seconds
+    end
     local body = {
       languageId = state.language_id,
-      durationSeconds = whole_seconds,
+      durationSeconds = math.max(0, credited_seconds),
       clientEventId = next_client_event_id(state.text_id),
     }
-    local dur = get_episode_duration_seconds()
-    if dur and dur > 0 and state.study_revision ~= "" and #state.study_revision == 64 then
+    if has_lesson and played_seconds >= 1 then
+      state.accumulated_seconds = state.accumulated_seconds - played_seconds
       body.lesson = {
         textId = state.text_id,
         sourceRevision = state.study_revision,
-        playedSeconds = whole_seconds,
+        playedSeconds = played_seconds,
         audioDurationSeconds = dur,
       }
+    elseif not has_lesson and played_seconds >= 1 then
+      state.accumulated_seconds = state.accumulated_seconds - played_seconds
     end
     net.request("POST", "/api/activity/logListening", body, req_opts, function(ok, _, _, err)
       if not ok then
@@ -1289,6 +1321,7 @@ local function reset_active_session_fields()
   state.title = ""
   state.study_revision = ""
   state.cues = {}
+  state.ref_track_id = nil
   state.ref_cues = {}
   state.word_cache = {}
   state.manually_graded = {}
@@ -1306,14 +1339,15 @@ local function reset_active_session_fields()
   state.is_playing = false
   state.play_wall_start = nil
   state.accumulated_seconds = 0
+  state.credit_accumulated_seconds = 0
   state.last_progress_pos = nil
   state.last_known_pos = nil
 end
 
-local function stop_session(reason_toast)
+local function stop_session(reason_toast, sync_flush)
   state.sync_seq = state.sync_seq + 1
   if state.active then
-    flush_listening_and_progress(true)
+    flush_listening_and_progress(true, sync_flush == true)
   end
   reset_active_session_fields()
 
@@ -1696,17 +1730,17 @@ local function replay_current_cue()
 end
 
 local function cycle_ref_mode()
+  local no_ref_hint = (#state.ref_cues == 0) and " (select Reference Sub Track in Ctrl+l)" or ""
   if state.ref_mode == "peek" then
     state.ref_mode = "always"
-    show_toast("Reference subs: Always Visible", 1.8)
+    show_toast("Reference subs: Always Visible" .. no_ref_hint, 2.2)
   elseif state.ref_mode == "always" then
     state.ref_mode = "hidden"
     show_toast("Reference subs: Hidden", 1.8)
   else
     state.ref_mode = "peek"
-    show_toast("Reference subs: Peek on Hover/Pause", 1.8)
+    show_toast("Reference subs: Peek on Hover/Pause" .. no_ref_hint, 2.2)
   end
-  render_all()
 end
 
 local function toggle_pause_at_cue_end()
@@ -1740,11 +1774,18 @@ local function load_reference_track_local(track_id)
     return
   end
   local gen = state.session_gen
-  sub.extract_track(target_track, function(ok, cues)
+  sub.extract_track(target_track, function(ok, cues, ext_err)
     if state.session_gen ~= gen then return end
-    state.ref_track_id = track_id
-    state.ref_cues = ok and cues or {}
-    render_all()
+    if ok and type(cues) == "table" and #cues > 0 then
+      state.ref_track_id = track_id
+      state.ref_cues = cues
+      render_all()
+    else
+      state.ref_track_id = nil
+      state.ref_cues = {}
+      msg.warn("Reference track extraction failed: " .. tostring(ext_err or "empty cues"))
+      show_toast("Reference sub track failed to load: " .. tostring(ext_err or "no dialogue cues"), 3.5)
+    end
   end)
 end
 
@@ -1768,6 +1809,14 @@ local function start_or_resync_session(draft)
     render_all()
     return
   end
+
+  local snap = {
+    language_id = draft.language_id,
+    study_track_id = draft.study_track_id,
+    ref_track_id = draft.ref_track_id,
+    ref_mode = draft.ref_mode,
+    auto_translate = draft.auto_translate,
+  }
 
   state.sync_seq = state.sync_seq + 1
   local sync_id = state.sync_seq
@@ -1795,12 +1844,12 @@ local function start_or_resync_session(draft)
       state.active = true
       state.live_fallback = true
       state.title = media_title
-      state.language_id = draft.language_id
-      local lang_obj = find_language_by_id(draft.language_id)
+      state.language_id = snap.language_id
+      local lang_obj = find_language_by_id(snap.language_id)
       state.language_code = lang_obj and lang_obj.code or ""
-      state.study_track_id = draft.study_track_id
+      state.study_track_id = snap.study_track_id
       state.ref_track_id = nil
-      state.ref_mode = draft.ref_mode or "peek"
+      state.ref_mode = snap.ref_mode or "peek"
       state.live_sub_text = trim(mp.get_property("sub-text") or "")
       state.menu_open = false
       state.menu_status = nil
@@ -1832,7 +1881,7 @@ local function start_or_resync_session(draft)
     end
 
     net.request("POST", "/api/mpv/session", {
-      languageId = draft.language_id,
+      languageId = snap.language_id,
       title = media_title,
       cues = payload_cues,
     }, { timeout = 90, playback_only = true }, function(api_ok, data, _, api_err)
@@ -1857,12 +1906,12 @@ local function start_or_resync_session(draft)
       state.live_fallback = false
       state.text_id = data.textId
       state.title = data.title or media_title
-      state.language_id = data.languageId or draft.language_id
+      state.language_id = data.languageId or snap.language_id
       state.language_code = data.languageCode or ""
       state.study_revision = data.studyRevision or ""
-      state.study_track_id = draft.study_track_id
-      state.ref_mode = draft.ref_mode or "peek"
-      state.auto_translate_override = draft.auto_translate or "auto"
+      state.study_track_id = snap.study_track_id
+      state.ref_mode = snap.ref_mode or "peek"
+      state.auto_translate_override = snap.auto_translate or "auto"
       state.cues = data.cues or {}
 
       build_word_cache_from_cues(state.cues)
@@ -1870,8 +1919,8 @@ local function start_or_resync_session(draft)
       set_osc_suppressed(true, true)
 
       -- Load local reference track (zero network requests)
-      if draft.ref_track_id and draft.ref_track_id ~= draft.study_track_id then
-        load_reference_track_local(draft.ref_track_id)
+      if snap.ref_track_id and snap.ref_track_id ~= snap.study_track_id then
+        load_reference_track_local(snap.ref_track_id)
       end
 
       -- Start periodic listening/progress flush timer
@@ -2007,7 +2056,29 @@ local function build_menu_rows()
   if state.menu_cursor > #rows then state.menu_cursor = #rows end
 end
 
+local function pick_default_ref_track(tracks, study_track_id, target_code)
+  if type(target_code) ~= "string" or trim(target_code) == "" or not tracks then
+    return nil
+  end
+  local tnorm = trim(target_code):lower():gsub("_", "-")
+  local tbase = tnorm:match("^([^%-]+)") or tnorm
+  local tmapped = ISO3_TO_ISO2[tbase] or tbase
+  for i = 1, #tracks do
+    local t = tracks[i]
+    if t.id ~= study_track_id and type(t.lang) == "string" and t.lang ~= "" then
+      local lnorm = trim(t.lang):lower():gsub("_", "-")
+      local lbase = lnorm:match("^([^%-]+)") or lnorm
+      local lmapped = ISO3_TO_ISO2[lbase] or lbase
+      if lnorm == tnorm or lbase == tbase or lmapped == tmapped then
+        return t
+      end
+    end
+  end
+  return nil
+end
+
 local function cycle_draft_field(row_id, dir)
+  if state.menu_busy then return end
   local d = state.menu_draft
   if not d then return end
   state.menu_confirm_resync = false
@@ -2024,6 +2095,13 @@ local function cycle_draft_field(row_id, dir)
     end
     local next_idx = ((idx - 1 + dir) % #d.tracks) + 1
     d.study_track_id = d.tracks[next_idx].id
+    if d.ref_track_id == d.study_track_id then
+      local alt = not d.ref_track_touched
+        and pick_default_ref_track(d.tracks, d.study_track_id, state.server_prefs.translationTargetLanguageCode)
+        or nil
+      d.ref_track_id = alt and alt.id or nil
+      d.ref_track_auto = (alt ~= nil)
+    end
   elseif row_id == "ref_track" then
     local options_ids = { false }
     for i = 1, #d.tracks do
@@ -2035,6 +2113,8 @@ local function cycle_draft_field(row_id, dir)
     end
     local next_idx = ((idx - 1 + dir) % #options_ids) + 1
     d.ref_track_id = options_ids[next_idx] or nil
+    d.ref_track_touched = true
+    d.ref_track_auto = false
   elseif row_id == "ref_mode" then
     local modes = { "peek", "always", "hidden" }
     local idx = 1
@@ -2126,6 +2206,7 @@ local function init_menu_draft()
 
   local study_track = nil
   local ref_track = nil
+  local ref_track_auto = false
 
   if state.active then
     for i = 1, #tracks do
@@ -2151,6 +2232,10 @@ local function init_menu_draft()
       end
     end
   end
+  if not state.active and not ref_track then
+    ref_track = pick_default_ref_track(tracks, study_track and study_track.id, state.server_prefs.translationTargetLanguageCode)
+    ref_track_auto = (ref_track ~= nil)
+  end
 
   local lang_id = state.active and state.language_id
     or map_track_lang_to_lingua_id(study_track and study_track.lang, state.languages, state.server_prefs.defaultLanguageId)
@@ -2160,6 +2245,8 @@ local function init_menu_draft()
     language_id = lang_id,
     study_track_id = study_track and study_track.id or nil,
     ref_track_id = ref_track and ref_track.id or nil,
+    ref_track_touched = false,
+    ref_track_auto = ref_track_auto,
     ref_mode = state.ref_mode,
     auto_translate = state.auto_translate_override,
   }
@@ -2226,6 +2313,16 @@ function menu.open()
           state.menu_draft.language_id = map_track_lang_to_lingua_id(
             st and st.lang, state.languages, state.server_prefs.defaultLanguageId
           )
+          if not state.menu_draft.ref_track_touched
+             and (state.menu_draft.ref_track_auto or not state.menu_draft.ref_track_id) then
+            local default_ref = pick_default_ref_track(
+              state.menu_draft.tracks,
+              state.menu_draft.study_track_id,
+              state.server_prefs.translationTargetLanguageCode
+            )
+            state.menu_draft.ref_track_id = default_ref and default_ref.id or nil
+            state.menu_draft.ref_track_auto = (default_ref ~= nil)
+          end
         end
         build_menu_rows()
         render_all()
@@ -2479,8 +2576,12 @@ local function render_main_subtitles()
   local pri_ink_h = #primary_rows > 0 and ((#primary_rows - 1) * pri_line_h + font_size) or 0
   local ref_gap = (#primary_rows > 0 and #active_ref_lines > 0) and 8 or 0
   local ref_ink_h = #active_ref_lines > 0 and ((#active_ref_lines - 1) * ref_line_h + ref_font_size) or 0
+  local peek_reserve_h = (state.ref_mode == "peek" and #state.ref_cues > 0 and #primary_rows > 0)
+    and (ref_font_size + 8)
+    or 0
   local total_ink_h = pri_ink_h + ref_gap + ref_ink_h
-  local base_y = state.res_y - margin_bottom - total_ink_h
+  local layout_h = math.max(total_ink_h, pri_ink_h + peek_reserve_h)
+  local base_y = state.res_y - margin_bottom - layout_h
 
   if #primary_rows > 0 or #active_ref_lines > 0 then
     local max_w = 0
@@ -2495,13 +2596,14 @@ local function render_main_subtitles()
     local box_w = math.min(state.res_x - 32, max_w + pad_x * 2)
     local box_x0 = (state.res_x - box_w) / 2
     local box_y0 = base_y - pad_y
-    local box_y1 = base_y + total_ink_h + pad_y
-    state.sub_zone_rect = { x0 = box_x0, y0 = box_y0, x1 = box_x0 + box_w, y1 = box_y1 }
+    local visual_y1 = base_y + total_ink_h + pad_y
+    local zone_y1 = base_y + layout_h + pad_y
+    state.sub_zone_rect = { x0 = box_x0, y0 = box_y0, x1 = box_x0 + box_w, y1 = zone_y1 }
     local box_mode = trim(tostring(opts.subtitle_box or "none")):lower()
     local show_box = (box_mode == "always")
       or (box_mode == "hover" and (state.hover_in_sub_zone or state.popup ~= nil or #active_ref_lines > 0))
     if show_box then
-      events[#events + 1] = ass_rounded_rect(box_x0, box_y0, box_x0 + box_w, box_y1, 12, "100E14", "34", "3A3848", "68")
+      events[#events + 1] = ass_rounded_rect(box_x0, box_y0, box_x0 + box_w, visual_y1, 12, "100E14", "34", "3A3848", "68")
     end
   end
 
@@ -3305,14 +3407,24 @@ local function on_pause_change(_, paused)
   end
 
   if state.ref_mode == "peek" then
-    render_main_subtitles()
+    render_all()
   end
 end
 
 local function on_live_sub_text(_, val)
   if not state.active or not state.live_fallback then return end
+  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone)
   state.live_sub_text = trim(val or "")
+  state.hover_cue_idx = nil
+  state.hover_tok_idx = nil
   render_main_subtitles()
+  local hover_changed = recompute_hover_from_mouse()
+  if hover_changed or had_hover then
+    update_keybindings()
+    render_all()
+  elseif not state.popup then
+    render_popup()
+  end
 end
 
 ---------------------------------------------------------------------------
@@ -3331,14 +3443,15 @@ mp.observe_property("time-pos", "number", on_time_pos)
 mp.observe_property("pause", "bool", on_pause_change)
 mp.observe_property("sub-text", "string", on_live_sub_text)
 
-mp.register_event("end-file", function()
+mp.register_event("end-file", function(ev)
   state.sync_seq = state.sync_seq + 1
   state.session_gen = state.session_gen + 1
   if state.menu_open then
     menu.close()
   end
   if state.active then
-    stop_session(nil)
+    local is_quit = (type(ev) == "table" and ev.reason == "quit")
+    stop_session(nil, is_quit)
   end
 end)
 

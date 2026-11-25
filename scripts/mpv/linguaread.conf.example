@@ -48,3 +48,6 @@ pause_on_click=auto
 
 # Interval (seconds) between periodic listening-time & watch-progress syncs.
 sync_interval_seconds=60
+
+# Global listening-time credit multiplier (1.0 = 1:1 wall-clock credit, 0.5 = half credit for video vs audio, 0 = episode passes/position only).
+listening_credit_multiplier=1.0

@@ -182,6 +182,8 @@ local state = {
   paused_by_menu = false,
 
   popup = nil, -- { cue_idx, anchor_idx, start_idx, end_idx, term, status, translation, provider, sentence_translation, loading, error, buttons = {} }
+  popup_rect = nil,
+  drag = nil, -- { cue_idx, anchor_idx, current_idx, start_vx, start_vy, moved }
   token_rects = {},
   sub_zone_rect = nil,
 
@@ -223,6 +225,7 @@ local state = {
   cue_seek_bound_mode = nil,
   word_hover_keys_bound = false,
   popup_keys_bound = false,
+  drag_keys_bound = false,
 }
 
 local overlay_main = mp.create_osd_overlay("ass-events")
@@ -360,6 +363,83 @@ function utf8x.codepoints(s)
     end
   end
   return cps
+end
+
+function utf8x.encode_cp(cp)
+  if type(cp) ~= "number" then return "" end
+  cp = math.floor(cp)
+  if cp < 0 or cp > 0x10FFFF or (cp >= 0xD800 and cp <= 0xDFFF) then
+    return "\239\191\189"
+  end
+  if cp < 0x80 then
+    return string.char(cp)
+  elseif cp < 0x800 then
+    local b1 = 0xC0 + math.floor(cp / 64)
+    local b2 = 0x80 + (cp % 64)
+    return string.char(b1, b2)
+  elseif cp < 0x10000 then
+    local b1 = 0xE0 + math.floor(cp / 4096)
+    local b2 = 0x80 + (math.floor(cp / 64) % 64)
+    local b3 = 0x80 + (cp % 64)
+    return string.char(b1, b2, b3)
+  else
+    local b1 = 0xF0 + math.floor(cp / 262144)
+    local b2 = 0x80 + (math.floor(cp / 4096) % 64)
+    local b3 = 0x80 + (math.floor(cp / 64) % 64)
+    local b4 = 0x80 + (cp % 64)
+    return string.char(b1, b2, b3, b4)
+  end
+end
+
+function utf8x.lower(s)
+  if type(s) ~= "string" or s == "" then return "" end
+  local cps = utf8x.codepoints(s)
+  local out = {}
+  for i = 1, #cps do
+    local cp = cps[i]
+    if cp >= 0x41 and cp <= 0x5A then
+      cp = cp + 32
+    elseif (cp >= 0xC0 and cp <= 0xD6) or (cp >= 0xD8 and cp <= 0xDE) then
+      cp = cp + 32
+    elseif cp >= 0x0100 and cp <= 0x017F then
+      if cp == 0x0130 then
+        cp = 0x0069
+      elseif cp == 0x0178 then
+        cp = 0x00FF
+      elseif (cp >= 0x0100 and cp <= 0x012E)
+          or (cp >= 0x0132 and cp <= 0x0136)
+          or (cp >= 0x014A and cp <= 0x0176) then
+        if (cp % 2) == 0 then cp = cp + 1 end
+      elseif (cp >= 0x0139 and cp <= 0x0147)
+          or (cp >= 0x0179 and cp <= 0x017D) then
+        if (cp % 2) == 1 then cp = cp + 1 end
+      end
+    elseif cp == 0x0218 or cp == 0x021A then
+      cp = cp + 1
+    elseif cp >= 0x0386 and cp <= 0x03AB then
+      if (cp >= 0x0391 and cp <= 0x03A1) or (cp >= 0x03A3 and cp <= 0x03AB) then
+        cp = cp + 32
+      elseif cp == 0x0386 then
+        cp = 0x03AC
+      elseif cp >= 0x0388 and cp <= 0x038A then
+        cp = cp + 37
+      elseif cp == 0x038C then
+        cp = 0x03CC
+      elseif cp >= 0x038E and cp <= 0x038F then
+        cp = cp + 63
+      end
+    elseif cp >= 0x0400 and cp <= 0x042F then
+      if cp >= 0x0410 then
+        cp = cp + 32
+      else
+        cp = cp + 80
+      end
+    elseif cp == 0x0490 then
+      cp = 0x0491
+    end
+    out[i] = utf8x.encode_cp(cp)
+  end
+  return table.concat(out)
 end
 
 local NARROW_CP = {
@@ -1597,6 +1677,8 @@ local function reset_active_session_fields()
   state.token_rects = {}
   state.sub_zone_rect = nil
   state.popup = nil
+  state.popup_rect = nil
+  state.drag = nil
   state.pause_at_cue_end = false
   state.cue_end_paused_idx = nil
   state.is_playing = false
@@ -1719,6 +1801,8 @@ end
 
 close_popup = function()
   state.popup = nil
+  state.popup_rect = nil
+  state.drag = nil
   state.hover_button_idx = nil
   if not state.menu_open and not (opts.pause_on_hover and state.hover_in_sub_zone) then
     release_script_pause_if_owned()
@@ -1771,12 +1855,63 @@ local function fetch_lookup(mode, include_sentence)
   end)
 end
 
-local function open_word_popup(cue_idx, start_idx, end_idx)
+local function open_word_popup(cue_idx, start_idx, end_idx, anchor_idx)
   local cue = state.cues[cue_idx]
   if not cue then return end
   local toks = cue.tokens or {}
+  local true_anchor = anchor_idx or start_idx
   if start_idx > end_idx then
     start_idx, end_idx = end_idx, start_idx
+  end
+  start_idx = math.max(1, start_idx)
+  end_idx = math.min(#toks, end_idx)
+  if start_idx > end_idx then return end
+
+  local word_count = 0
+  local first_word_idx = nil
+  for idx = start_idx, end_idx do
+    local t = toks[idx]
+    if t and t.isWord then
+      word_count = word_count + 1
+      if word_count == 1 then
+        first_word_idx = idx
+      end
+    end
+  end
+  if word_count == 0 then return end
+  if word_count > 1 then
+    local word_parts = {}
+    local joined_preview = ""
+    local clamped_end = nil
+    for idx = start_idx, end_idx do
+      local t = toks[idx]
+      if t and t.isWord then
+        local part = trim(t.text)
+        if part ~= "" then
+          local next_str = (#word_parts == 0) and part or (joined_preview .. " " .. part)
+          if #word_parts >= 1 and utf8x.len(next_str) > 100 then
+            break
+          end
+          word_parts[#word_parts + 1] = part
+          joined_preview = next_str
+          clamped_end = idx
+        end
+      end
+    end
+    if not clamped_end then return end
+    end_idx = clamped_end
+    if #word_parts == 1 then
+      word_count = 1
+      first_word_idx = clamped_end
+    end
+  end
+  if word_count == 1 then
+    start_idx = first_word_idx
+    end_idx = first_word_idx
+    true_anchor = first_word_idx
+  else
+    if true_anchor < start_idx then true_anchor = start_idx end
+    if true_anchor > end_idx then true_anchor = end_idx end
   end
 
   local term = ""
@@ -1808,12 +1943,15 @@ local function open_word_popup(cue_idx, start_idx, end_idx)
     end
     local joined = table.concat(word_parts, " ")
     if joined == "" then return end
-    if utf8x.len(joined) > 100 or #joined > 100 then
-      local truncated = trim(utf8x.truncate_bytes(joined, 100))
-      local last_space = truncated:match("^(.*)%s+%S*$")
-      joined = (last_space and last_space ~= "") and last_space or truncated
+    if utf8x.len(joined) > 100 then
+      local cps = utf8x.codepoints(joined)
+      local trimmed_out = {}
+      for c_i = 1, 100 do
+        trimmed_out[c_i] = utf8x.encode_cp(cps[c_i])
+      end
+      joined = trim(table.concat(trimmed_out))
     end
-    term = joined:lower()
+    term = utf8x.lower(joined)
     local cached = state.word_cache[term]
     if cached then
       status = cached.status or 0
@@ -1827,9 +1965,10 @@ local function open_word_popup(cue_idx, start_idx, end_idx)
     ensure_script_pause(false)
   end
 
+  state.hover_button_idx = nil
   state.popup = {
     cue_idx = cue_idx,
-    anchor_idx = start_idx,
+    anchor_idx = true_anchor,
     start_idx = start_idx,
     end_idx = end_idx,
     term = term,
@@ -1864,12 +2003,12 @@ local function adjust_phrase_selection(delta)
       next_idx = next_idx + 1
     end
     if next_idx > #toks then return end
-    -- Check 100-char ceiling
+    -- Check 100-char ceiling (codepoints, matching Word.cs StringLength)
     local parts = {}
     for k = s_idx, next_idx do
       if toks[k].isWord then parts[#parts + 1] = trim(toks[k].text) end
     end
-    if #table.concat(parts, " ") > 100 then
+    if utf8x.len(table.concat(parts, " ")) > 100 then
       show_toast("Phrase limit is 100 characters.", 2.0)
       return
     end
@@ -1884,7 +2023,104 @@ local function adjust_phrase_selection(delta)
     e_idx = prev_idx
   end
 
-  open_word_popup(state.popup.cue_idx, s_idx, e_idx)
+  open_word_popup(state.popup.cue_idx, s_idx, e_idx, state.popup.anchor_idx)
+end
+
+local function apply_saved_phrase_to_cues(phrase_term, status, word_id, translation)
+  if not phrase_term or not phrase_term:find(" ", 1, true) or state.live_fallback then
+    return
+  end
+  local phrase_keys = {}
+  for part in utf8x.lower(phrase_term):gmatch("%S+") do
+    phrase_keys[#phrase_keys + 1] = part
+  end
+  if #phrase_keys < 2 then return end
+
+  local key_count = #phrase_keys
+  for c_idx = 1, #state.cues do
+    local cue = state.cues[c_idx]
+    local toks = cue and cue.tokens
+    if toks and #toks >= 1 then
+      local new_toks = {}
+      local old_to_new = {}
+      local changed = false
+      local i = 1
+      local n = #toks
+      while i <= n do
+        local last_idx = i
+        local cursor = i
+        local k = 1
+        while k <= key_count and cursor <= n do
+          local tk = toks[cursor]
+          if k > 1 then
+            while cursor <= n and toks[cursor] and not toks[cursor].isWord and trim(toks[cursor].text) == "" do
+              cursor = cursor + 1
+            end
+            tk = toks[cursor]
+          end
+          if not tk or not tk.isWord then
+            break
+          end
+          local sub_matched = true
+          local saw_sub = false
+          for sub_w in utf8x.lower(tk.text):gmatch("%S+") do
+            saw_sub = true
+            if k > key_count or sub_w ~= phrase_keys[k] then
+              sub_matched = false
+              break
+            end
+            k = k + 1
+          end
+          if not saw_sub or not sub_matched then
+            break
+          end
+          last_idx = cursor
+          if k <= key_count then
+            cursor = cursor + 1
+          end
+        end
+        local matched = (k == key_count + 1)
+
+        if matched then
+          local span_parts = {}
+          for m = i, last_idx do
+            span_parts[#span_parts + 1] = toks[m].text or ""
+          end
+          local new_idx = #new_toks + 1
+          new_toks[new_idx] = {
+            text = table.concat(span_parts),
+            term = phrase_term,
+            isWord = true,
+            wordId = word_id,
+            status = status,
+            translation = translation,
+          }
+          for m = i, last_idx do
+            old_to_new[m] = new_idx
+          end
+          changed = true
+          i = last_idx + 1
+        else
+          local new_idx = #new_toks + 1
+          new_toks[new_idx] = toks[i]
+          old_to_new[i] = new_idx
+          i = i + 1
+        end
+      end
+
+      if changed then
+        cue.tokens = new_toks
+        if state.popup and state.popup.cue_idx == c_idx then
+          state.popup.start_idx = old_to_new[state.popup.start_idx] or state.popup.start_idx
+          state.popup.end_idx = old_to_new[state.popup.end_idx] or state.popup.end_idx
+          state.popup.anchor_idx = old_to_new[state.popup.anchor_idx] or state.popup.anchor_idx
+        end
+        if state.hover_cue_idx == c_idx then
+          state.hover_tok_idx = nil
+        end
+      end
+    end
+  end
 end
 
 local function grade_active_word(new_status)
@@ -1924,6 +2160,7 @@ local function grade_active_word(new_status)
   if state.popup and state.popup.term == term then
     state.popup.status = new_status
   end
+  apply_saved_phrase_to_cues(term, new_status, state.word_cache[term].wordId, existing_translation)
   render_all()
 
   local cue = cue_idx and state.cues[cue_idx]
@@ -1950,12 +2187,51 @@ local function grade_active_word(new_status)
     if state.session_gen == gen and type(data) == "table" and data.wordId then
       local cur = state.word_cache[term] or {}
       cur.wordId = data.wordId
-      if type(data.translation) == "string" and data.translation ~= "" then
-        cur.translation = data.translation
+      local saved_translation = (type(data.translation) == "string" and data.translation ~= "") and data.translation or nil
+      if saved_translation then
+        cur.translation = saved_translation
       end
       state.word_cache[term] = cur
-      if state.popup and state.popup.term == term then
+      local canon = (type(data.term) == "string" and trim(data.term) ~= "") and trim(data.term) or nil
+      if canon then
+        state.manually_graded[canon] = true
+        state.word_cache[canon] = {
+          wordId = cur.wordId,
+          status = cur.status or data.status or new_status,
+          translation = cur.translation,
+        }
+      end
+      if not state.live_fallback and (saved_translation or (canon and canon ~= term)) then
+        for ci = 1, #state.cues do
+          local toks = state.cues[ci].tokens
+          if toks then
+            for ti = 1, #toks do
+              local tk = toks[ti]
+              if tk.isWord and (tk.term == term or (canon and tk.term == canon)) then
+                if canon then tk.term = canon end
+                tk.wordId = data.wordId
+                if saved_translation then tk.translation = saved_translation end
+              end
+            end
+          end
+        end
+      end
+      local popup_changed = false
+      if state.popup and (state.popup.term == term or (canon and state.popup.term == canon)) then
         state.popup.word_id = data.wordId
+        if saved_translation then
+          state.popup.translation = saved_translation
+          if not state.popup.provider or state.popup.provider == "" then
+            state.popup.provider = "cached"
+          end
+        end
+        if canon then
+          state.popup.term = canon
+        end
+        popup_changed = true
+      end
+      if popup_changed or saved_translation then
+        render_all()
       end
     end
   end)
@@ -2658,7 +2934,9 @@ function menu.open()
 
   if state.popup then
     state.popup = nil
+    state.popup_rect = nil
   end
+  state.drag = nil
 
   if not mp.get_property_native("pause") then
     mp.set_property_native("pause", true)
@@ -2953,7 +3231,7 @@ local function render_main_subtitles()
         local w_s, w_e = s:find("^[^%s%p]+", idx)
         if not w_s then break end
         local w = s:sub(w_s, w_e)
-        live_tokens[#live_tokens + 1] = { text = w, term = w:lower(), isWord = true, status = 0 }
+        live_tokens[#live_tokens + 1] = { text = w, term = utf8x.lower(w), isWord = true, status = 0 }
         idx = w_e + 1
       end
     end
@@ -2996,15 +3274,47 @@ local function render_main_subtitles()
     state.sub_zone_rect = { x0 = box_x0, y0 = box_y0, x1 = box_x0 + box_w, y1 = zone_y1 }
     local box_mode = trim(tostring(opts.subtitle_box or "none")):lower()
     local show_box = (box_mode == "always")
-      or (box_mode == "hover" and (state.hover_in_sub_zone or state.popup ~= nil or #active_ref_lines > 0))
+      or (box_mode == "hover" and (state.hover_in_sub_zone or state.popup ~= nil or state.drag ~= nil or #active_ref_lines > 0))
     if show_box then
       events[#events + 1] = ass_rounded_rect(box_x0, box_y0, box_x0 + box_w, visual_y1, 12, "100E14", "34", "3A3848", "68")
     end
   end
 
+  local sel_lo, sel_hi = nil, nil
+  if state.drag and state.drag.cue_idx == cue_idx then
+    sel_lo = math.min(state.drag.anchor_idx, state.drag.current_idx)
+    sel_hi = math.max(state.drag.anchor_idx, state.drag.current_idx)
+  elseif state.popup and state.popup.cue_idx == cue_idx then
+    sel_lo = math.min(state.popup.start_idx, state.popup.end_idx)
+    sel_hi = math.max(state.popup.start_idx, state.popup.end_idx)
+  end
+  local is_multi = (sel_lo ~= nil and (state.drag ~= nil or sel_lo < sel_hi))
+
   local cur_y = base_y
   for r = 1, #primary_rows do
     local row = primary_rows[r]
+    if is_multi then
+      local span_x0, span_x1 = nil, nil
+      local scan_x = (state.res_x - row.width) / 2
+      for k = 1, #row.items do
+        local item = row.items[k]
+        local in_sel = (item.tok_idx >= sel_lo and item.tok_idx <= sel_hi)
+        if in_sel then
+          if not span_x0 then span_x0 = scan_x end
+          span_x1 = scan_x + item.width
+        elseif span_x0 then
+          if span_x1 > span_x0 then
+            events[#events + 1] = ass_rounded_rect(span_x0 - 4, cur_y + 2, span_x1 + 4, cur_y + pri_line_h - 4, 6, "443414", "68", "33EEFF", "88")
+          end
+          span_x0, span_x1 = nil, nil
+        end
+        scan_x = scan_x + item.width
+      end
+      if span_x0 and span_x1 > span_x0 then
+        events[#events + 1] = ass_rounded_rect(span_x0 - 4, cur_y + 2, span_x1 + 4, cur_y + pri_line_h - 4, 6, "443414", "68", "33EEFF", "88")
+      end
+    end
+
     local cur_x = (state.res_x - row.width) / 2
     local line_parts = {
       string.format(
@@ -3016,9 +3326,8 @@ local function render_main_subtitles()
 
     for k = 1, #row.items do
       local item = row.items[k]
-      local is_hovered = (state.hover_cue_idx == cue_idx and state.hover_tok_idx == item.tok_idx and item.isWord)
-      local is_selected = (state.popup and state.popup.cue_idx == cue_idx
-        and item.tok_idx >= state.popup.start_idx and item.tok_idx <= state.popup.end_idx)
+      local is_hovered = (not state.drag and state.hover_cue_idx == cue_idx and state.hover_tok_idx == item.tok_idx and item.isWord)
+      local is_selected = (sel_lo ~= nil and item.tok_idx >= sel_lo and item.tok_idx <= sel_hi)
       local color
       local u = 0
       if is_selected or is_hovered then
@@ -3072,7 +3381,8 @@ end
 local function render_popup()
   local p = state.popup
   if not p then
-    if opts.hover_tooltip and state.active and not state.menu_open and state.hover_cue_idx and state.hover_tok_idx then
+    state.popup_rect = nil
+    if opts.hover_tooltip and state.active and not state.menu_open and not state.drag and state.hover_cue_idx and state.hover_tok_idx then
       local cue = state.cues[state.hover_cue_idx]
       local tok = cue and cue.tokens and cue.tokens[state.hover_tok_idx]
       local resolved = tok and resolve_cue_token_state(tok) or nil
@@ -3204,15 +3514,22 @@ local function render_popup()
     close_x0 + 17, close_y0 + 15, opts.font_name, hover_close and "FFFFFF" or "B8B8C6"
   )
 
-  local term_txt = utf8x.truncate(p.term or "", 30)
+  local badge_label = status_names[p.status or 0] or "?"
+  local badge_w = math.floor(utf8x.measure_px(badge_label, 18) + 18)
+  local max_term_w = math.max(80, close_x0 - cx - badge_w - 24)
+  local raw_term = p.term or ""
+  local max_term_cps = math.min(46, utf8x.len(raw_term))
+  local term_txt = utf8x.truncate(raw_term, max_term_cps)
+  while max_term_cps > 8 and (utf8x.measure_px(term_txt, header_fs) * 1.12) > max_term_w do
+    max_term_cps = max_term_cps - 2
+    term_txt = utf8x.truncate(raw_term, max_term_cps)
+  end
   events[#events + 1] = string.format(
     "{\\an7\\pos(%d,%d)\\q2\\fn%s\\fs%d\\b1\\bord0\\shad0\\1c&H%s&}%s",
     cx, cy, opts.font_name, header_fs, st_color, ass_escape(term_txt)
   )
 
-  local badge_x = cx + math.floor(utf8x.measure_px(term_txt, header_fs) + 12)
-  local badge_label = status_names[p.status or 0] or "?"
-  local badge_w = math.floor(utf8x.measure_px(badge_label, 18) + 18)
+  local badge_x = cx + math.floor(utf8x.measure_px(term_txt, header_fs) * 1.12 + 14)
   if badge_x + badge_w + 10 <= close_x0 then
     local badge_y = cy + 3
     events[#events + 1] = ass_rounded_rect(badge_x, badge_y, badge_x + badge_w, badge_y + 26, 7, "282530", "18", st_color, "48")
@@ -3287,11 +3604,11 @@ local function render_popup()
 
   cy = cy + 4
   events[#events + 1] = string.format(
-    "{\\an7\\pos(%d,%d)\\q2\\fn%s\\fs18\\bord0\\shad0\\1c&H9A9AA6&}Phrase: Shift+Click or [ / ]   |   Wheel: adjust level   |   Esc: close",
+    "{\\an7\\pos(%d,%d)\\q2\\fn%s\\fs18\\bord0\\shad0\\1c&H9A9AA6&}Phrase: Drag, Shift+Click, or [ / ]   |   Wheel: level   |   Esc: close",
     cx, cy, opts.font_name
   )
 
-  p.rect = { x0 = box_x0, y0 = box_y0, x1 = box_x0 + box_w, y1 = box_y0 + box_h }
+  state.popup_rect = { x0 = box_x0, y0 = box_y0, x1 = box_x0 + box_w, y1 = box_y0 + box_h }
   overlay_popup.data = table.concat(events, "\n")
   overlay_popup:update()
 end
@@ -3431,59 +3748,139 @@ local function point_in_rect(x, y, r)
   return r and x >= r.x0 and x <= r.x1 and y >= r.y0 and y <= r.y1
 end
 
-local function on_mouse_click(shift_held)
-  if state.menu_open then
-    local mx, my = state.mouse_vx, state.mouse_vy
-    for i = 1, #state.menu_rows do
-      local r = state.menu_rows[i]
-      if point_in_rect(mx, my, r.rect) then
-        state.menu_cursor = i
-        if r.kind == "cycle" then
-          local mid = (r.rect.x0 + r.rect.x1) / 2
-          cycle_draft_field(r.id, mx >= mid and 1 or -1)
-        else
-          activate_menu_row(i)
-        end
-        return
+local function find_nearest_drag_token(cue_idx, vx, vy)
+  if not cue_idx then return nil end
+  local best = nil
+  local best_dy = math.huge
+  local best_dx = math.huge
+  for i = 1, #state.token_rects do
+    local tr = state.token_rects[i]
+    if tr.cue_idx == cue_idx then
+      if point_in_rect(vx, vy, tr) then
+        return tr
+      end
+      local dy = 0
+      if vy < tr.y0 then
+        dy = tr.y0 - vy
+      elseif vy > tr.y1 then
+        dy = vy - tr.y1
+      end
+      local dx = 0
+      if vx < tr.x0 then
+        dx = tr.x0 - vx
+      elseif vx > tr.x1 then
+        dx = vx - tr.x1
+      end
+      if dy < best_dy or (dy == best_dy and dx < best_dx) then
+        best = tr
+        best_dy = dy
+        best_dx = dx
       end
     end
-    if not point_in_rect(mx, my, state.menu_rect) then
-      menu.close()
+  end
+  return best
+end
+
+local function try_click_popup_button()
+  if not state.popup or not state.popup.buttons then return false end
+  for i = 1, #state.popup.buttons do
+    local b = state.popup.buttons[i]
+    if point_in_rect(state.mouse_vx, state.mouse_vy, b) then
+      if b.action == "grade" then
+        grade_active_word(b.val)
+      elseif b.action == "sent" then
+        fetch_lookup("word", true)
+      elseif b.action == "ai" then
+        fetch_lookup("context", false)
+      elseif b.action == "replay" then
+        replay_current_cue()
+      elseif b.action == "close" then
+        close_popup()
+      end
+      return true
+    end
+  end
+  return false
+end
+
+local function on_mouse_click(_)
+  if not state.menu_open then return end
+  local mx, my = state.mouse_vx, state.mouse_vy
+  for i = 1, #state.menu_rows do
+    local r = state.menu_rows[i]
+    if point_in_rect(mx, my, r.rect) then
+      state.menu_cursor = i
+      if r.kind == "cycle" then
+        local mid = (r.rect.x0 + r.rect.x1) / 2
+        cycle_draft_field(r.id, mx >= mid and 1 or -1)
+      else
+        activate_menu_row(i)
+      end
+      return
+    end
+  end
+  if not point_in_rect(mx, my, state.menu_rect) then
+    menu.close()
+  end
+end
+
+local function on_mouse_left(ev, shift_held)
+  if not ev or (ev.event ~= "down" and ev.event ~= "up") then return end
+
+  if ev.event == "down" then
+    if state.menu_open then
+      on_mouse_click(shift_held)
+      return
+    end
+
+    if try_click_popup_button() then
+      state.drag = nil
+      return
+    end
+
+    if state.popup and point_in_rect(state.mouse_vx, state.mouse_vy, state.popup_rect) then
+      return
+    end
+
+    if state.hover_cue_idx and state.hover_tok_idx then
+      if shift_held and state.popup and state.popup.cue_idx == state.hover_cue_idx then
+        state.drag = nil
+        open_word_popup(state.hover_cue_idx, state.popup.anchor_idx, state.hover_tok_idx, state.popup.anchor_idx)
+        return
+      end
+
+      state.drag = {
+        cue_idx = state.hover_cue_idx,
+        anchor_idx = state.hover_tok_idx,
+        current_idx = state.hover_tok_idx,
+        start_vx = state.mouse_vx,
+        start_vy = state.mouse_vy,
+        moved = false,
+      }
+      update_keybindings()
+      render_all()
+      return
+    end
+
+    if state.popup then
+      close_popup()
+    elseif state.drag then
+      state.drag = nil
+      update_keybindings()
+      render_all()
     end
     return
   end
 
-  if state.popup and state.popup.buttons then
-    for i = 1, #state.popup.buttons do
-      local b = state.popup.buttons[i]
-      if point_in_rect(state.mouse_vx, state.mouse_vy, b) then
-        if b.action == "grade" then
-          grade_active_word(b.val)
-        elseif b.action == "sent" then
-          fetch_lookup("word", true)
-        elseif b.action == "ai" then
-          fetch_lookup("context", false)
-        elseif b.action == "replay" then
-          replay_current_cue()
-        elseif b.action == "close" then
-          close_popup()
-        end
-        return
-      end
-    end
-  end
-
-  if state.hover_cue_idx and state.hover_tok_idx then
-    if shift_held and state.popup and state.popup.cue_idx == state.hover_cue_idx then
-      open_word_popup(state.hover_cue_idx, state.popup.anchor_idx, state.hover_tok_idx)
-    else
-      open_word_popup(state.hover_cue_idx, state.hover_tok_idx, state.hover_tok_idx)
-    end
-    return
-  end
-
-  if state.popup then
-    close_popup()
+  if not state.drag then return end
+  local d = state.drag
+  state.drag = nil
+  if state.active and not state.menu_open and state.cues[d.cue_idx]
+     and (state.live_fallback or d.cue_idx == state.current_cue_idx) then
+    open_word_popup(d.cue_idx, d.anchor_idx, d.current_idx, d.anchor_idx)
+  else
+    update_keybindings()
+    render_all()
   end
 end
 
@@ -3548,9 +3945,10 @@ local CUE_SEEK_RIGHT_BINDINGS = {
 }
 
 local WORD_HOVER_BINDINGS = {
-  { "MBTN_LEFT", "lr-whover-click", function() on_mouse_click(false) end },
-  { "MBTN_LEFT_DBL", "lr-whover-dblclick", function() on_mouse_click(false) end },
-  { "Shift+MBTN_LEFT", "lr-whover-shift-click", function() on_mouse_click(true) end },
+  { "MBTN_LEFT", "lr-whover-click", function(ev) on_mouse_left(ev, false) end, { complex = true } },
+  { "MBTN_LEFT_DBL", "lr-whover-dblclick", function() end },
+  { "Shift+MBTN_LEFT", "lr-whover-shift-click", function(ev) on_mouse_left(ev, true) end, { complex = true } },
+  { "Shift+MBTN_LEFT_DBL", "lr-whover-shift-dblclick", function() end },
   { "1", "lr-whover-1", function() grade_active_word(1) end },
   { "2", "lr-whover-2", function() grade_active_word(2) end },
   { "3", "lr-whover-3", function() grade_active_word(3) end },
@@ -3560,10 +3958,28 @@ local WORD_HOVER_BINDINGS = {
   { "r", "lr-whover-replay", replay_current_cue },
 }
 
+local DRAG_BINDINGS = {
+  { "MBTN_LEFT", "lr-drag-left", function(ev) on_mouse_left(ev, false) end, { complex = true } },
+  { "Shift+MBTN_LEFT", "lr-drag-shift-left", function(ev) on_mouse_left(ev, true) end, { complex = true } },
+  { "MBTN_LEFT_DBL", "lr-drag-dblclick", function() end },
+  { "Shift+MBTN_LEFT_DBL", "lr-drag-shift-dblclick", function() end },
+  { "ESC", "lr-drag-esc", function()
+      if state.drag then
+        state.drag = nil
+        if not state.popup and opts.pause_on_hover and state.paused_by_hover and not state.hover_in_sub_zone then
+          release_script_pause_if_owned()
+        end
+        update_keybindings()
+        render_all()
+      end
+    end },
+}
+
 local POPUP_BINDINGS = {
-  { "MBTN_LEFT", "lr-popup-click", function() on_mouse_click(false) end },
-  { "MBTN_LEFT_DBL", "lr-popup-dblclick", function() on_mouse_click(false) end },
-  { "Shift+MBTN_LEFT", "lr-popup-shift-click", function() on_mouse_click(true) end },
+  { "MBTN_LEFT", "lr-popup-click", function(ev) on_mouse_left(ev, false) end, { complex = true } },
+  { "MBTN_LEFT_DBL", "lr-popup-dblclick", function() end },
+  { "Shift+MBTN_LEFT", "lr-popup-shift-click", function(ev) on_mouse_left(ev, true) end, { complex = true } },
+  { "Shift+MBTN_LEFT_DBL", "lr-popup-shift-dblclick", function() end },
   { "WHEEL_UP", "lr-popup-wup", function() step_word_status(-1) end },
   { "WHEEL_DOWN", "lr-popup-wdown", function() step_word_status(1) end },
   { "LEFT", "lr-popup-left", function() adjust_phrase_selection(-1) end, { repeatable = true } },
@@ -3598,10 +4014,11 @@ end
 update_keybindings = function()
   local want_modal = state.menu_open
   local want_session = (not want_modal) and state.active
-  local want_popup = want_session and state.popup ~= nil
-  local want_word_hover = want_session and (not want_popup) and (state.hover_tok_idx ~= nil)
+  local want_drag = want_session and (state.drag ~= nil)
+  local want_popup = want_session and (not want_drag) and (state.popup ~= nil)
+  local want_word_hover = want_session and (not want_drag) and (not want_popup) and (state.hover_tok_idx ~= nil)
   local cue_mode = get_cue_seek_mode()
-  local want_cue_seek = want_session and (not want_popup) and (not state.live_fallback) and (cue_mode ~= "off")
+  local want_cue_seek = want_session and (not want_drag) and (not want_popup) and (not state.live_fallback) and (cue_mode ~= "off")
 
   if not want_modal and state.modal_keys_bound then
     detach_bindings(MODAL_BINDINGS)
@@ -3627,6 +4044,10 @@ update_keybindings = function()
     detach_bindings(POPUP_BINDINGS)
     state.popup_keys_bound = false
   end
+  if not want_drag and state.drag_keys_bound then
+    detach_bindings(DRAG_BINDINGS)
+    state.drag_keys_bound = false
+  end
 
   if want_session and not state.session_keys_bound then
     attach_bindings(SESSION_BINDINGS)
@@ -3647,6 +4068,10 @@ update_keybindings = function()
   if want_popup and not state.popup_keys_bound then
     attach_bindings(POPUP_BINDINGS)
     state.popup_keys_bound = true
+  end
+  if want_drag and not state.drag_keys_bound then
+    attach_bindings(DRAG_BINDINGS)
+    state.drag_keys_bound = true
   end
   if want_modal and not state.modal_keys_bound then
     attach_bindings(MODAL_BINDINGS)
@@ -3683,6 +4108,16 @@ local function recompute_hover_from_mouse()
   local prev_tok = state.hover_tok_idx
   local prev_zone = state.hover_in_sub_zone
   local prev_btn = state.hover_button_idx
+  local drag_changed = false
+
+  if state.drag then
+    local dtok = find_nearest_drag_token(state.drag.cue_idx, vx, vy)
+    if dtok and dtok.tok_idx ~= state.drag.current_idx then
+      state.drag.current_idx = dtok.tok_idx
+      state.drag.moved = true
+      drag_changed = true
+    end
+  end
 
   state.hover_cue_idx = nil
   state.hover_tok_idx = nil
@@ -3707,7 +4142,7 @@ local function recompute_hover_from_mouse()
     end
   end
 
-  if opts.pause_on_hover and not state.popup then
+  if opts.pause_on_hover and not state.popup and not state.drag then
     if state.hover_in_sub_zone and not prev_zone then
       ensure_script_pause(true)
     elseif not state.hover_in_sub_zone and prev_zone and state.paused_by_hover then
@@ -3715,13 +4150,15 @@ local function recompute_hover_from_mouse()
     end
   end
 
-  return prev_tok ~= state.hover_tok_idx or prev_zone ~= state.hover_in_sub_zone or prev_btn ~= state.hover_button_idx
+  return prev_tok ~= state.hover_tok_idx or prev_zone ~= state.hover_in_sub_zone or prev_btn ~= state.hover_button_idx or drag_changed
 end
 
 local function on_mouse_pos(_, mpos)
   if not mpos or not mpos.hover or state.osd_w <= 0 or state.osd_h <= 0 then
     state.mouse_in_window = false
-    if state.hover_tok_idx or state.hover_in_sub_zone or state.hover_button_idx then
+    local had_drag = (state.drag ~= nil)
+    state.drag = nil
+    if had_drag or state.hover_tok_idx or state.hover_in_sub_zone or state.hover_button_idx then
       state.hover_cue_idx = nil
       state.hover_tok_idx = nil
       state.hover_in_sub_zone = false
@@ -3789,13 +4226,16 @@ local function on_time_pos(_, pos)
   end
 
   local cue_changed = (new_idx ~= state.current_cue_idx)
-  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone)
+  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone or state.drag ~= nil)
   if cue_changed or ref_key ~= state.current_ref_key then
     if cue_changed then
       state.current_cue_idx = new_idx
       state.cue_end_paused_idx = nil
       state.hover_cue_idx = nil
       state.hover_tok_idx = nil
+      if state.drag and state.drag.cue_idx ~= new_idx then
+        state.drag = nil
+      end
     end
     state.current_ref_key = ref_key
     render_main_subtitles()
@@ -3836,10 +4276,19 @@ end
 
 local function on_live_sub_text(_, val)
   if not state.active or not state.live_fallback then return end
-  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone)
-  state.live_sub_text = trim(val or "")
+  local next_text = trim(val or "")
+  local text_changed = (next_text ~= state.live_sub_text)
+  local had_popup = (text_changed and state.popup ~= nil)
+  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone or state.drag ~= nil or had_popup)
+  state.live_sub_text = next_text
   state.hover_cue_idx = nil
   state.hover_tok_idx = nil
+  state.drag = nil
+  if had_popup then
+    state.popup = nil
+    state.popup_rect = nil
+    state.hover_button_idx = nil
+  end
   render_main_subtitles()
   local hover_changed = recompute_hover_from_mouse()
   if hover_changed or had_hover then

@@ -226,6 +226,7 @@ local state = {
   word_hover_keys_bound = false,
   popup_keys_bound = false,
   drag_keys_bound = false,
+  mouse_select_keys_bound = false,
 }
 
 local overlay_main = mp.create_osd_overlay("ass-events")
@@ -3825,7 +3826,34 @@ local function on_mouse_click(_)
 end
 
 local function on_mouse_left(ev, shift_held)
-  if not ev or (ev.event ~= "down" and ev.event ~= "up") then return end
+  if not ev then return end
+
+  if ev.event == "press" then
+    if state.menu_open then
+      on_mouse_click(shift_held)
+      return
+    end
+    if try_click_popup_button() then
+      state.drag = nil
+      return
+    end
+    if state.popup and point_in_rect(state.mouse_vx, state.mouse_vy, state.popup_rect) then
+      return
+    end
+    if state.hover_cue_idx and state.hover_tok_idx then
+      state.drag = nil
+      if shift_held and state.popup and state.popup.cue_idx == state.hover_cue_idx then
+        open_word_popup(state.hover_cue_idx, state.popup.anchor_idx, state.hover_tok_idx, state.popup.anchor_idx)
+      else
+        open_word_popup(state.hover_cue_idx, state.hover_tok_idx, state.hover_tok_idx, state.hover_tok_idx)
+      end
+      return
+    end
+    if state.popup then
+      close_popup()
+    end
+    return
+  end
 
   if ev.event == "down" then
     if state.menu_open then
@@ -3872,13 +3900,16 @@ local function on_mouse_left(ev, shift_held)
     return
   end
 
-  if not state.drag then return end
+  if ev.event ~= "up" or not state.drag then return end
   local d = state.drag
   state.drag = nil
-  if state.active and not state.menu_open and state.cues[d.cue_idx]
+  if not ev.canceled and state.active and not state.menu_open and state.cues[d.cue_idx]
      and (state.live_fallback or d.cue_idx == state.current_cue_idx) then
     open_word_popup(d.cue_idx, d.anchor_idx, d.current_idx, d.anchor_idx)
   else
+    if not state.popup and opts.pause_on_hover and state.paused_by_hover and not state.hover_in_sub_zone then
+      release_script_pause_if_owned()
+    end
     update_keybindings()
     render_all()
   end
@@ -3944,11 +3975,14 @@ local CUE_SEEK_RIGHT_BINDINGS = {
   { "Shift+RIGHT", "lr-plain-seek-right", function() seek_relative_plain(5) end, { repeatable = true } },
 }
 
+local MOUSE_SELECT_BINDINGS = {
+  { "MBTN_LEFT", "lr-mouse-left", function(ev) on_mouse_left(ev, false) end, { complex = true } },
+  { "MBTN_LEFT_DBL", "lr-mouse-dbl", function() end },
+  { "Shift+MBTN_LEFT", "lr-mouse-shift-left", function(ev) on_mouse_left(ev, true) end, { complex = true } },
+  { "Shift+MBTN_LEFT_DBL", "lr-mouse-shift-dbl", function() end },
+}
+
 local WORD_HOVER_BINDINGS = {
-  { "MBTN_LEFT", "lr-whover-click", function(ev) on_mouse_left(ev, false) end, { complex = true } },
-  { "MBTN_LEFT_DBL", "lr-whover-dblclick", function() end },
-  { "Shift+MBTN_LEFT", "lr-whover-shift-click", function(ev) on_mouse_left(ev, true) end, { complex = true } },
-  { "Shift+MBTN_LEFT_DBL", "lr-whover-shift-dblclick", function() end },
   { "1", "lr-whover-1", function() grade_active_word(1) end },
   { "2", "lr-whover-2", function() grade_active_word(2) end },
   { "3", "lr-whover-3", function() grade_active_word(3) end },
@@ -3959,10 +3993,6 @@ local WORD_HOVER_BINDINGS = {
 }
 
 local DRAG_BINDINGS = {
-  { "MBTN_LEFT", "lr-drag-left", function(ev) on_mouse_left(ev, false) end, { complex = true } },
-  { "Shift+MBTN_LEFT", "lr-drag-shift-left", function(ev) on_mouse_left(ev, true) end, { complex = true } },
-  { "MBTN_LEFT_DBL", "lr-drag-dblclick", function() end },
-  { "Shift+MBTN_LEFT_DBL", "lr-drag-shift-dblclick", function() end },
   { "ESC", "lr-drag-esc", function()
       if state.drag then
         state.drag = nil
@@ -3976,10 +4006,6 @@ local DRAG_BINDINGS = {
 }
 
 local POPUP_BINDINGS = {
-  { "MBTN_LEFT", "lr-popup-click", function(ev) on_mouse_left(ev, false) end, { complex = true } },
-  { "MBTN_LEFT_DBL", "lr-popup-dblclick", function() end },
-  { "Shift+MBTN_LEFT", "lr-popup-shift-click", function(ev) on_mouse_left(ev, true) end, { complex = true } },
-  { "Shift+MBTN_LEFT_DBL", "lr-popup-shift-dblclick", function() end },
   { "WHEEL_UP", "lr-popup-wup", function() step_word_status(-1) end },
   { "WHEEL_DOWN", "lr-popup-wdown", function() step_word_status(1) end },
   { "LEFT", "lr-popup-left", function() adjust_phrase_selection(-1) end, { repeatable = true } },
@@ -4017,6 +4043,7 @@ update_keybindings = function()
   local want_drag = want_session and (state.drag ~= nil)
   local want_popup = want_session and (not want_drag) and (state.popup ~= nil)
   local want_word_hover = want_session and (not want_drag) and (not want_popup) and (state.hover_tok_idx ~= nil)
+  local want_mouse_select = want_session and ((state.hover_tok_idx ~= nil) or (state.popup ~= nil) or (state.drag ~= nil))
   local cue_mode = get_cue_seek_mode()
   local want_cue_seek = want_session and (not want_drag) and (not want_popup) and (not state.live_fallback) and (cue_mode ~= "off")
 
@@ -4048,6 +4075,10 @@ update_keybindings = function()
     detach_bindings(DRAG_BINDINGS)
     state.drag_keys_bound = false
   end
+  if not want_mouse_select and state.mouse_select_keys_bound then
+    detach_bindings(MOUSE_SELECT_BINDINGS)
+    state.mouse_select_keys_bound = false
+  end
 
   if want_session and not state.session_keys_bound then
     attach_bindings(SESSION_BINDINGS)
@@ -4060,6 +4091,10 @@ update_keybindings = function()
     end
     state.cue_seek_keys_bound = true
     state.cue_seek_bound_mode = cue_mode
+  end
+  if want_mouse_select and not state.mouse_select_keys_bound then
+    attach_bindings(MOUSE_SELECT_BINDINGS)
+    state.mouse_select_keys_bound = true
   end
   if want_word_hover and not state.word_hover_keys_bound then
     attach_bindings(WORD_HOVER_BINDINGS)

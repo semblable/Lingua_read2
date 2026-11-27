@@ -201,6 +201,8 @@ local state = {
   saved_sub_vis = nil,
   saved_sec_sub_vis = nil,
   osc_suppressed = false,
+  saved_window_dragging = nil,
+  window_dragging_suppressed = false,
 
   toast_text = nil,
   toast_timer = nil,
@@ -237,6 +239,7 @@ local overlay_menu = mp.create_osd_overlay("ass-events")
 local render_all
 local update_keybindings
 local close_popup
+local recompute_hover_from_mouse
 
 ---------------------------------------------------------------------------
 -- Pure-Lua JSON encoder (handles nil-omission, UTF-8 pass-through, arrays)
@@ -1653,6 +1656,25 @@ local function set_osc_suppressed(hide, force)
   end
 end
 
+local function set_window_dragging_suppressed(suppress)
+  if suppress then
+    if not state.window_dragging_suppressed then
+      local cur = mp.get_property_native("window-dragging")
+      state.saved_window_dragging = cur
+      state.window_dragging_suppressed = true
+      if cur ~= false then
+        mp.set_property_native("window-dragging", false)
+      end
+    end
+  elseif state.window_dragging_suppressed then
+    state.window_dragging_suppressed = false
+    if state.saved_window_dragging ~= nil and state.saved_window_dragging ~= false then
+      mp.set_property_native("window-dragging", state.saved_window_dragging)
+    end
+    state.saved_window_dragging = nil
+  end
+end
+
 local function reset_active_session_fields()
   if state.sync_timer then
     state.sync_timer:kill()
@@ -1709,6 +1731,7 @@ local function stop_session(reason_toast, sync_flush)
 
   restore_native_subs()
   set_osc_suppressed(false)
+  set_window_dragging_suppressed(false)
   update_keybindings()
   if reason_toast then
     show_toast(reason_toast, 3.0)
@@ -3197,7 +3220,7 @@ local function render_main_subtitles()
   local pos = mp.get_property_native("time-pos")
   local active_ref_lines = {}
   local show_ref = (state.ref_mode == "always")
-    or (state.ref_mode == "peek" and (state.hover_in_sub_zone or state.popup ~= nil or mp.get_property_native("pause")))
+    or (state.ref_mode == "peek" and (state.hover_in_sub_zone or state.popup ~= nil or state.drag ~= nil or mp.get_property_native("pause")))
   if show_ref and #state.ref_cues > 0 and type(pos) == "number" then
     local ref_indices = find_cues_at_time(state.ref_cues, pos)
     if #ref_indices > 0 then
@@ -3825,6 +3848,20 @@ local function on_mouse_click(_)
   end
 end
 
+local function sync_mouse_pos_from_mpv()
+  local mpos = mp.get_property_native("mouse-pos")
+  if type(mpos) == "table" and type(mpos.x) == "number" and type(mpos.y) == "number"
+     and state.osd_w > 0 and state.osd_h > 0 then
+    local cx = math.max(0, math.min(state.osd_w, mpos.x))
+    local cy = math.max(0, math.min(state.osd_h, mpos.y))
+    state.mouse_vx = cx * (state.res_x / state.osd_w)
+    state.mouse_vy = cy * (state.res_y / state.osd_h)
+    state.mouse_in_window = (mpos.hover == true)
+    return true
+  end
+  return false
+end
+
 local function on_mouse_left(ev, shift_held)
   if not ev then return end
 
@@ -3832,6 +3869,9 @@ local function on_mouse_left(ev, shift_held)
     if state.menu_open then
       on_mouse_click(shift_held)
       return
+    end
+    if state.active and sync_mouse_pos_from_mpv() and state.mouse_in_window then
+      recompute_hover_from_mouse()
     end
     if try_click_popup_button() then
       state.drag = nil
@@ -3860,6 +3900,9 @@ local function on_mouse_left(ev, shift_held)
       on_mouse_click(shift_held)
       return
     end
+    if state.active and sync_mouse_pos_from_mpv() and state.mouse_in_window then
+      recompute_hover_from_mouse()
+    end
 
     if try_click_popup_button() then
       state.drag = nil
@@ -3885,6 +3928,7 @@ local function on_mouse_left(ev, shift_held)
         start_vy = state.mouse_vy,
         moved = false,
       }
+      msg.verbose(string.format("Drag start: cue=%s anchor=%s", tostring(state.drag.cue_idx), tostring(state.drag.anchor_idx)))
       update_keybindings()
       render_all()
       return
@@ -3905,8 +3949,18 @@ local function on_mouse_left(ev, shift_held)
   state.drag = nil
   if not ev.canceled and state.active and not state.menu_open and state.cues[d.cue_idx]
      and (state.live_fallback or d.cue_idx == state.current_cue_idx) then
+    if sync_mouse_pos_from_mpv() then
+      local dtok = find_nearest_drag_token(d.cue_idx, state.mouse_vx, state.mouse_vy)
+      if dtok then
+        d.current_idx = dtok.tok_idx
+      end
+    end
+    msg.verbose(string.format("Drag commit: cue=%s anchor=%s current=%s",
+      tostring(d.cue_idx), tostring(d.anchor_idx), tostring(d.current_idx)))
     open_word_popup(d.cue_idx, d.anchor_idx, d.current_idx, d.anchor_idx)
   else
+    msg.verbose(string.format("Drag cancel: cue=%s canceled=%s",
+      tostring(d.cue_idx), tostring(ev.canceled)))
     if not state.popup and opts.pause_on_hover and state.paused_by_hover and not state.hover_in_sub_zone then
       release_script_pause_if_owned()
     end
@@ -3975,12 +4029,7 @@ local CUE_SEEK_RIGHT_BINDINGS = {
   { "Shift+RIGHT", "lr-plain-seek-right", function() seek_relative_plain(5) end, { repeatable = true } },
 }
 
-local MOUSE_SELECT_BINDINGS = {
-  { "MBTN_LEFT", "lr-mouse-left", function(ev) on_mouse_left(ev, false) end, { complex = true } },
-  { "MBTN_LEFT_DBL", "lr-mouse-dbl", function() end },
-  { "Shift+MBTN_LEFT", "lr-mouse-shift-left", function(ev) on_mouse_left(ev, true) end, { complex = true } },
-  { "Shift+MBTN_LEFT_DBL", "lr-mouse-shift-dbl", function() end },
-}
+local MOUSE_SELECT_SECTION = "linguaread_mouse_select_" .. mp.get_script_name()
 
 local WORD_HOVER_BINDINGS = {
   { "1", "lr-whover-1", function() grade_active_word(1) end },
@@ -4043,7 +4092,7 @@ update_keybindings = function()
   local want_drag = want_session and (state.drag ~= nil)
   local want_popup = want_session and (not want_drag) and (state.popup ~= nil)
   local want_word_hover = want_session and (not want_drag) and (not want_popup) and (state.hover_tok_idx ~= nil)
-  local want_mouse_select = want_session and ((state.hover_tok_idx ~= nil) or (state.popup ~= nil) or (state.drag ~= nil))
+  local want_mouse_select = want_session and (state.hover_in_sub_zone or (state.hover_tok_idx ~= nil) or (state.popup ~= nil) or (state.drag ~= nil))
   local cue_mode = get_cue_seek_mode()
   local want_cue_seek = want_session and (not want_drag) and (not want_popup) and (not state.live_fallback) and (cue_mode ~= "off")
 
@@ -4076,7 +4125,7 @@ update_keybindings = function()
     state.drag_keys_bound = false
   end
   if not want_mouse_select and state.mouse_select_keys_bound then
-    detach_bindings(MOUSE_SELECT_BINDINGS)
+    mp.commandv("disable-section", MOUSE_SELECT_SECTION)
     state.mouse_select_keys_bound = false
   end
 
@@ -4093,7 +4142,7 @@ update_keybindings = function()
     state.cue_seek_bound_mode = cue_mode
   end
   if want_mouse_select and not state.mouse_select_keys_bound then
-    attach_bindings(MOUSE_SELECT_BINDINGS)
+    mp.commandv("enable-section", MOUSE_SELECT_SECTION, "allow-hide-cursor")
     state.mouse_select_keys_bound = true
   end
   if want_word_hover and not state.word_hover_keys_bound then
@@ -4112,6 +4161,7 @@ update_keybindings = function()
     attach_bindings(MODAL_BINDINGS)
     state.modal_keys_bound = true
   end
+  set_window_dragging_suppressed(want_mouse_select)
 end
 
 local function sync_overlay_dimensions()
@@ -4133,7 +4183,7 @@ local function sync_overlay_dimensions()
   render_all()
 end
 
-local function recompute_hover_from_mouse()
+recompute_hover_from_mouse = function()
   if not state.mouse_in_window or state.menu_open or not state.active then
     return false
   end
@@ -4191,6 +4241,33 @@ end
 local function on_mouse_pos(_, mpos)
   if not mpos or not mpos.hover or state.osd_w <= 0 or state.osd_h <= 0 then
     state.mouse_in_window = false
+    if state.drag and state.active and not state.menu_open and state.osd_w > 0 and state.osd_h > 0 then
+      local hover_cleared = (state.hover_cue_idx ~= nil or state.hover_tok_idx ~= nil or state.hover_in_sub_zone or state.hover_button_idx ~= nil)
+      state.hover_cue_idx = nil
+      state.hover_tok_idx = nil
+      state.hover_in_sub_zone = false
+      state.hover_button_idx = nil
+      local drag_changed = false
+      if type(mpos) == "table" and type(mpos.x) == "number" and type(mpos.y) == "number" then
+        local cx = math.max(0, math.min(state.osd_w, mpos.x))
+        local cy = math.max(0, math.min(state.osd_h, mpos.y))
+        state.mouse_vx = cx * (state.res_x / state.osd_w)
+        state.mouse_vy = cy * (state.res_y / state.osd_h)
+        local dtok = find_nearest_drag_token(state.drag.cue_idx, state.mouse_vx, state.mouse_vy)
+        if dtok and dtok.tok_idx ~= state.drag.current_idx then
+          state.drag.current_idx = dtok.tok_idx
+          state.drag.moved = true
+          drag_changed = true
+        end
+      end
+      if hover_cleared then
+        update_keybindings()
+      end
+      if hover_cleared or drag_changed then
+        render_all()
+      end
+      return
+    end
     local had_drag = (state.drag ~= nil)
     state.drag = nil
     if had_drag or state.hover_tok_idx or state.hover_in_sub_zone or state.hover_button_idx then
@@ -4314,11 +4391,13 @@ local function on_live_sub_text(_, val)
   local next_text = trim(val or "")
   local text_changed = (next_text ~= state.live_sub_text)
   local had_popup = (text_changed and state.popup ~= nil)
-  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone or state.drag ~= nil or had_popup)
+  local had_hover = (state.hover_tok_idx ~= nil or state.hover_in_sub_zone or (text_changed and state.drag ~= nil) or had_popup)
   state.live_sub_text = next_text
   state.hover_cue_idx = nil
   state.hover_tok_idx = nil
-  state.drag = nil
+  if text_changed then
+    state.drag = nil
+  end
   if had_popup then
     state.popup = nil
     state.popup_rect = nil
@@ -4337,6 +4416,19 @@ end
 ---------------------------------------------------------------------------
 -- Registration (NO observers on sid / secondary-sid / track-list / file-loaded)
 ---------------------------------------------------------------------------
+do
+  local script_name = mp.get_script_name()
+  mp.add_key_binding(nil, "lr-mouse-left", function(ev) on_mouse_left(ev, false) end, { complex = true })
+  mp.add_key_binding(nil, "lr-mouse-shift-left", function(ev) on_mouse_left(ev, true) end, { complex = true })
+  local mouse_select_cfg = table.concat({
+    "MBTN_LEFT script-binding " .. script_name .. "/lr-mouse-left",
+    "MBTN_LEFT_DBL ignore",
+    "Shift+MBTN_LEFT script-binding " .. script_name .. "/lr-mouse-shift-left",
+    "Shift+MBTN_LEFT_DBL ignore",
+  }, "\n")
+  mp.commandv("define-section", MOUSE_SELECT_SECTION, mouse_select_cfg, "force")
+end
+
 mp.add_key_binding("Ctrl+l", "open-menu", function()
   menu.toggle()
 end)
@@ -4368,6 +4460,7 @@ mp.register_event("shutdown", function()
     restore_native_subs()
   end
   set_osc_suppressed(false)
+  set_window_dragging_suppressed(false)
   net.cleanup_temp_files()
 end)
 
